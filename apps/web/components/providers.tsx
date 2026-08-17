@@ -55,9 +55,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   if (!user) return null;
 
+  const editor = pathname.includes("/editor");
+
   return (
     <AuthContext.Provider value={{ user, refresh }}>
-      <AppShell>{children}</AppShell>
+      {editor ? children : <AppShell>{children}</AppShell>}
       <ToastHost />
     </AuthContext.Provider>
   );

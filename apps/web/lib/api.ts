@@ -30,7 +30,68 @@ export type Video = {
   retryCount?: number;
   projectId?: string;
   transcript?: { language?: string; fullText?: string; segments?: unknown } | null;
-  editPlan?: Record<string, unknown> | null;
+  editPlan?: EditPlan | Record<string, unknown> | null;
+};
+
+export type CaptionWord = { text: string; start: number; end: number };
+export type CaptionPhrase = { start: number; end: number; words: CaptionWord[] };
+
+export type CaptionStyle = {
+  preset: "classic" | "hormozi" | "bold" | "minimal" | "neon" | "subtitle";
+  font: "serif" | "sans" | "mono";
+  size: number;
+  position: "top" | "center" | "lower" | "bottom";
+  y_percent?: number | null;
+  active_color: string;
+  muted_color: string;
+  background: "none" | "pill" | "box";
+  background_color: string;
+  background_opacity: number;
+  stroke_width: number;
+  stroke_color: string;
+  uppercase: boolean;
+  words_per_line: number;
+  highlight: "word" | "none";
+  shadow: boolean;
+  align: "left" | "center" | "right";
+};
+
+export type EditSegment = {
+  start: number;
+  end: number;
+  visual: "talking_head" | "broll";
+  broll_query: string | null;
+  broll_type: "video" | "image" | null;
+  effect: string;
+  sfx: string | null;
+};
+
+export type EditPlan = {
+  video_summary: string;
+  tone: string;
+  music_category: string;
+  segments: EditSegment[];
+  captions_enabled?: boolean;
+  music_volume?: number | null;
+  caption_phrases?: CaptionPhrase[] | null;
+  caption_style?: CaptionStyle | null;
+};
+
+export type BrollAsset = {
+  id: string;
+  query: string;
+  assetType: string;
+  url: string;
+};
+
+export type EditorPayload = Video & {
+  projectId: string;
+  captionPhrases: CaptionPhrase[];
+  sourceUrl: string;
+  musicUrl: string | null;
+  outputReady: boolean;
+  brollAssets: BrollAsset[];
+  editPlan: EditPlan | null;
 };
 
 export type User = {

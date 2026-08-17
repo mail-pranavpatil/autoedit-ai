@@ -126,9 +126,14 @@ export default function VideoDetailPage() {
             <p className="text-sm text-muted">You can leave this page. Processing continues in the background.</p>
           )}
           {video.status === "READY" && (
-            <a href={`${API_URL}/api/videos/${video.id}/download`}>
-              <Button>Download MP4</Button>
-            </a>
+            <>
+              <Link href={`/projects/${projectId}/videos/${video.id}/editor`}>
+                <Button>Open editor</Button>
+              </Link>
+              <a href={`${API_URL}/api/videos/${video.id}/download`}>
+                <Button variant="secondary">Download video</Button>
+              </a>
+            </>
           )}
         </div>
       </div>

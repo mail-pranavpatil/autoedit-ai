@@ -9,7 +9,8 @@ def test_ffmpeg_args_are_list_not_shell(tmp_path: Path):
     broll = tmp_path / "broll.mp4"
     music = tmp_path / "music.wav"
     sfx = tmp_path / "whoosh.wav"
-    for p in (source, broll, music, sfx):
+    cap = tmp_path / "cap.png"
+    for p in (source, broll, music, sfx, cap):
         p.write_bytes(b"not-a-real-media-file")
     out = tmp_path / "final.mp4"
     plan = EditPlan.model_validate(
@@ -47,6 +48,7 @@ def test_ffmpeg_args_are_list_not_shell(tmp_path: Path):
         broll_paths=[(2, 4, str(broll), "video")],
         music_path=str(music),
         sfx_events=[(2, str(sfx))],
+        caption_overlays=[(0.2, 1.4, str(cap))],
         allowed_roots=[tmp_path],
         dry_run=True,
     )
@@ -56,3 +58,5 @@ def test_ffmpeg_args_are_list_not_shell(tmp_path: Path):
     assert "-filter_complex" in args
     assert "setpts=" in " ".join(args)
     assert "overlay=" in " ".join(args)
+    assert str(cap) in args
+    assert "format=rgba" in " ".join(args)

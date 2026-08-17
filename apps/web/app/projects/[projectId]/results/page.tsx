@@ -94,9 +94,14 @@ function ResultCard({ video, projectId }: { video: Video; projectId: string }) {
         <div className="p-3 text-sm">{video.filename}</div>
       </Link>
       {video.outputUrl && (
-        <a className="block border-t border-line p-3 text-sm text-accent" href={`${API_URL}${video.outputUrl}`}>
-          Download
-        </a>
+        <div className="flex border-t border-line text-sm">
+          <Link className="flex-1 p-3 text-accent" href={`/projects/${projectId}/videos/${video.id}/editor`}>
+            Open editor
+          </Link>
+          <a className="flex-1 border-l border-line p-3 text-accent" href={`${API_URL}/api/videos/${video.id}/download`}>
+            Download video
+          </a>
+        </div>
       )}
     </div>
   );

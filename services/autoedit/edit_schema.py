@@ -84,11 +84,183 @@ class EditSegment(BaseModel):
         return self
 
 
+class CaptionWord(BaseModel):
+    text: str
+    start: float
+    end: float
+
+
+class CaptionPhrase(BaseModel):
+    start: float
+    end: float
+    words: list[CaptionWord] = Field(min_length=1)
+
+
+CaptionPreset = Literal["classic", "hormozi", "bold", "minimal", "neon", "subtitle"]
+CaptionFont = Literal["serif", "sans", "mono"]
+CaptionBackground = Literal["none", "pill", "box"]
+CaptionPosition = Literal["top", "center", "lower", "bottom"]
+CaptionHighlight = Literal["word", "none"]
+CaptionAlign = Literal["left", "center", "right"]
+
+
+def _hex_color(v: str) -> str:
+    text = (v or "").strip()
+    if len(text) == 4 and text.startswith("#") and all(c in "0123456789abcdefABCDEF" for c in text[1:]):
+        return f"#{text[1]*2}{text[2]*2}{text[3]*2}".upper()
+    if len(text) == 7 and text.startswith("#") and all(c in "0123456789abcdefABCDEF" for c in text[1:]):
+        return text.upper()
+    raise ValueError("color must be #RGB or #RRGGBB")
+
+
+CAPTION_PRESETS: dict[str, dict] = {
+    "classic": {
+        "font": "serif",
+        "size": 54,
+        "position": "lower",
+        "active_color": "#FFFFFF",
+        "muted_color": "#B8B8B8",
+        "background": "pill",
+        "background_color": "#000000",
+        "background_opacity": 0.95,
+        "stroke_width": 0,
+        "stroke_color": "#000000",
+        "uppercase": False,
+        "words_per_line": 5,
+        "highlight": "word",
+        "shadow": False,
+        "align": "center",
+    },
+    "hormozi": {
+        "font": "sans",
+        "size": 64,
+        "position": "lower",
+        "active_color": "#FFE500",
+        "muted_color": "#FFFFFF",
+        "background": "box",
+        "background_color": "#000000",
+        "background_opacity": 0.92,
+        "stroke_width": 0,
+        "stroke_color": "#000000",
+        "uppercase": True,
+        "words_per_line": 4,
+        "highlight": "word",
+        "shadow": False,
+        "align": "center",
+    },
+    "bold": {
+        "font": "sans",
+        "size": 72,
+        "position": "lower",
+        "active_color": "#FFFFFF",
+        "muted_color": "#D1D5DB",
+        "background": "none",
+        "background_color": "#000000",
+        "background_opacity": 0.0,
+        "stroke_width": 6,
+        "stroke_color": "#000000",
+        "uppercase": True,
+        "words_per_line": 4,
+        "highlight": "word",
+        "shadow": True,
+        "align": "center",
+    },
+    "minimal": {
+        "font": "serif",
+        "size": 40,
+        "position": "bottom",
+        "active_color": "#FFFFFF",
+        "muted_color": "#FFFFFF",
+        "background": "none",
+        "background_color": "#000000",
+        "background_opacity": 0.0,
+        "stroke_width": 3,
+        "stroke_color": "#000000",
+        "uppercase": False,
+        "words_per_line": 6,
+        "highlight": "none",
+        "shadow": False,
+        "align": "center",
+    },
+    "neon": {
+        "font": "sans",
+        "size": 56,
+        "position": "lower",
+        "active_color": "#5CFF9F",
+        "muted_color": "#9CA3AF",
+        "background": "pill",
+        "background_color": "#111827",
+        "background_opacity": 0.9,
+        "stroke_width": 0,
+        "stroke_color": "#000000",
+        "uppercase": False,
+        "words_per_line": 5,
+        "highlight": "word",
+        "shadow": True,
+        "align": "center",
+    },
+    "subtitle": {
+        "font": "sans",
+        "size": 32,
+        "position": "bottom",
+        "active_color": "#FFFFFF",
+        "muted_color": "#E5E7EB",
+        "background": "none",
+        "background_color": "#000000",
+        "background_opacity": 0.0,
+        "stroke_width": 2,
+        "stroke_color": "#000000",
+        "uppercase": False,
+        "words_per_line": 8,
+        "highlight": "none",
+        "shadow": False,
+        "align": "center",
+    },
+}
+
+
+class CaptionStyle(BaseModel):
+    preset: CaptionPreset = "classic"
+    font: CaptionFont = "serif"
+    size: int = Field(default=54, ge=24, le=96)
+    position: CaptionPosition = "lower"
+    y_percent: float | None = Field(default=None, ge=5, le=92)
+    active_color: str = "#FFFFFF"
+    muted_color: str = "#B8B8B8"
+    background: CaptionBackground = "pill"
+    background_color: str = "#000000"
+    background_opacity: float = Field(default=0.95, ge=0, le=1)
+    stroke_width: int = Field(default=0, ge=0, le=12)
+    stroke_color: str = "#000000"
+    uppercase: bool = False
+    words_per_line: int = Field(default=5, ge=2, le=8)
+    highlight: CaptionHighlight = "word"
+    shadow: bool = False
+    align: CaptionAlign = "center"
+
+    @field_validator("active_color", "muted_color", "background_color", "stroke_color")
+    @classmethod
+    def valid_hex(cls, v: str) -> str:
+        return _hex_color(v)
+
+
+def caption_style_from_preset(name: str) -> CaptionStyle:
+    key = name if name in CAPTION_PRESETS else "classic"
+    return CaptionStyle(preset=key, **CAPTION_PRESETS[key])  # type: ignore[arg-type]
+
+
+POSITION_Y = {"top": 12.0, "center": 46.0, "lower": 62.0, "bottom": 82.0}
+
+
 class EditPlan(BaseModel):
     video_summary: str
     tone: str
     music_category: MusicCategory
     segments: list[EditSegment] = Field(min_length=1)
+    captions_enabled: bool = True
+    music_volume: float | None = None
+    caption_phrases: list[CaptionPhrase] | None = None
+    caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
 
     @field_validator("segments")
     @classmethod
@@ -122,6 +294,7 @@ DEFAULT_STYLE_PROFILE = {
     "music_volume": 0.18,
     "sfx_volume": 0.28,
     "voice_volume": 1.0,
+    "captions_enabled": True,
 }
 
 

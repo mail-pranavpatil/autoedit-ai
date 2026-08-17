@@ -11,7 +11,7 @@ from autoedit.auth import get_valid_access_token
 from autoedit.db import SessionLocal
 from autoedit.logging_setup import setup_logging
 from autoedit.models import User, Video
-from autoedit.pipeline import process_video
+from autoedit.pipeline import process_video, render_video
 from worker.celery_app import celery_app
 
 setup_logging()
@@ -46,6 +46,19 @@ def process_video_task(self, video_id: str) -> str:
         return "ok"
     except Exception:
         logger.exception("process_video_task failed for %s", video_id)
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="worker.render_video", bind=True, max_retries=0)
+def render_video_task(self, video_id: str) -> str:
+    db = SessionLocal()
+    try:
+        render_video(db, video_id)
+        return "ok"
+    except Exception:
+        logger.exception("render_video_task failed for %s", video_id)
         raise
     finally:
         db.close()

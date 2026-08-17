@@ -32,6 +32,7 @@ def test_valid_plan():
         }
     )
     assert len(plan.segments) == 2
+    assert plan.captions_enabled is True
 
 
 def test_rejects_shell_in_query():

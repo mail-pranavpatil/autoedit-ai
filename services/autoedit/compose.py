@@ -31,6 +31,8 @@ def compose_final(
     style: dict | None = None,
     allowed_roots: list[Path] | None = None,
     dry_run: bool = False,
+    caption_overlays: list[tuple[float, float, str]] | None = None,
+    caption_video_path: str | None = None,
 ) -> list[str]:
     """Build a 1080x1920 H.264/AAC video from a validated EditPlan.
 
@@ -39,6 +41,8 @@ def compose_final(
     a pixel-identical copy of the raw clip.
     """
     style = {**DEFAULT_STYLE_PROFILE, **(style or {})}
+    if plan.music_volume is not None:
+        style["music_volume"] = plan.music_volume
     roots = allowed_roots or [Path(source_path).resolve().parent.parent.parent]
     source = _safe_path(source_path, [Path(source_path).resolve().parent, *roots])
     out = str(Path(output_path).resolve())
@@ -71,6 +75,21 @@ def compose_final(
         inputs += ["-i", _safe_path(path, roots + [Path(path).resolve().parent])]
         input_index += 1
 
+    cap_video_idx = None
+    cap_labels: list[tuple[int, float, float]] = []
+    captions_on = plan.captions_enabled and style.get("captions_enabled", True)
+    if captions_on and caption_video_path:
+        cap_video_idx = input_index
+        inputs += ["-i", _safe_path(caption_video_path, roots + [Path(caption_video_path).resolve().parent])]
+        input_index += 1
+    elif captions_on:
+        for start, end, path in (caption_overlays or [])[:80]:
+            safe = _safe_path(path, roots + [Path(path).resolve().parent])
+            seg_dur = max(0.05, end - start)
+            inputs += ["-loop", "1", "-framerate", "30", "-t", f"{seg_dur:.3f}", "-i", safe]
+            cap_labels.append((input_index, start, end))
+            input_index += 1
+
     # Overscale + slow crop travel so even a native 9:16 talking-head is visibly edited.
     base = (
         f"[0:v]scale=1240:2204:force_original_aspect_ratio=increase,"
@@ -95,6 +114,24 @@ def compose_final(
             f"[{last}][{shifted}]overlay=0:0:enable='between(t,{start:.3f},{end:.3f})':eof_action=pass[{v_label}]"
         )
         last = v_label
+
+    if cap_video_idx is not None:
+        c_label = "capv"
+        v_label = "vcaps"
+        filters.append(f"[{cap_video_idx}:v]format=rgba,scale=1080:1920:force_original_aspect_ratio=decrease[{c_label}]")
+        filters.append(f"[{last}][{c_label}]overlay=0:0:format=auto:eof_action=pass[{v_label}]")
+        last = v_label
+    else:
+        for idx, (inp, start, end) in enumerate(cap_labels):
+            c_label = f"cap{idx}"
+            shifted = f"caps{idx}"
+            v_label = f"vc{idx}"
+            filters.append(f"[{inp}:v]format=rgba[{c_label}]")
+            filters.append(f"[{c_label}]setpts=PTS+{start:.3f}/TB[{shifted}]")
+            filters.append(
+                f"[{last}][{shifted}]overlay=0:0:format=auto:enable='between(t,{start:.3f},{end:.3f})':eof_action=pass[{v_label}]"
+            )
+            last = v_label
 
     audio_labels = []
     filters.append(

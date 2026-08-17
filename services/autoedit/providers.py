@@ -35,29 +35,63 @@ class OpenAITranscription(TranscriptionProvider):
                 model="whisper-1",
                 file=f,
                 response_format="verbose_json",
-                timestamp_granularities=["segment"],
+                timestamp_granularities=["word", "segment"],
             )
+        top_words = _coerce_words(getattr(result, "words", None))
         segments = []
         for seg in getattr(result, "segments", None) or []:
             if isinstance(seg, dict):
-                segments.append(
-                    {
-                        "start": float(seg.get("start", 0)),
-                        "end": float(seg.get("end", 0)),
-                        "text": seg.get("text", "").strip(),
-                    }
-                )
+                item = {
+                    "start": float(seg.get("start", 0)),
+                    "end": float(seg.get("end", 0)),
+                    "text": str(seg.get("text", "")).strip(),
+                    "words": _coerce_words(seg.get("words")),
+                }
             else:
-                segments.append(
-                    {
-                        "start": float(getattr(seg, "start", 0)),
-                        "end": float(getattr(seg, "end", 0)),
-                        "text": str(getattr(seg, "text", "")).strip(),
-                    }
-                )
+                item = {
+                    "start": float(getattr(seg, "start", 0)),
+                    "end": float(getattr(seg, "end", 0)),
+                    "text": str(getattr(seg, "text", "")).strip(),
+                    "words": _coerce_words(getattr(seg, "words", None)),
+                }
+            if not item["words"] and top_words:
+                item["words"] = [
+                    w
+                    for w in top_words
+                    if w["start"] >= item["start"] - 0.05 and w["end"] <= item["end"] + 0.05
+                ]
+            segments.append(item)
         text = getattr(result, "text", "") or " ".join(s["text"] for s in segments)
         language = getattr(result, "language", "en")
         return {"language": language, "full_text": text, "segments": segments}
+
+
+def _coerce_words(raw) -> list[dict]:
+    words = []
+    for item in raw or []:
+        if isinstance(item, dict):
+            text = str(item.get("word") or item.get("text") or "").strip()
+            if not text:
+                continue
+            words.append(
+                {
+                    "text": text,
+                    "start": float(item.get("start") or 0),
+                    "end": float(item.get("end") or 0),
+                }
+            )
+        else:
+            text = str(getattr(item, "word", None) or getattr(item, "text", "") or "").strip()
+            if not text:
+                continue
+            words.append(
+                {
+                    "text": text,
+                    "start": float(getattr(item, "start", 0) or 0),
+                    "end": float(getattr(item, "end", 0) or 0),
+                }
+            )
+    return words
 
 
 class OpenAILLM(LLMProvider):

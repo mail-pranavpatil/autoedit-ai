@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 
 from autoedit.config import get_settings
+from autoedit.captions import build_caption_overlay_video, phrases_from_plan_or_transcript
 from autoedit.compose import compose_final
 from autoedit.drive import download_file, download_url
 from autoedit.edit_schema import DEFAULT_STYLE_PROFILE, EditPlan, STAGE_PROGRESS, plan_is_weak
@@ -241,10 +242,103 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
     plan = EditPlan.model_validate(latest_plan.plan_json)
     bump("PLAN_READY", "Edit plan ready")
 
-    # B-roll
-    bump("SEARCHING_BROLL", "Searching B-roll")
-    db.query(BrollAsset).filter(BrollAsset.video_id == video.id).delete()
+    phrases = phrases_from_plan_or_transcript(
+        [p.model_dump() for p in (plan.caption_phrases or [])] if plan.caption_phrases else None,
+        tx_row.segments_json if isinstance(tx_row.segments_json, list) else None,
+        words_per_line=plan.caption_style.words_per_line if plan.caption_style else 5,
+    )
+    if phrases and not plan.caption_phrases:
+        plan = plan.model_copy(update={"caption_phrases": phrases})
+        latest_plan.plan_json = plan.model_dump()
+        db.commit()
+        (ws / "edit_plan.json").write_text(json.dumps(plan.model_dump(), indent=2))
+
+    broll_paths = _collect_broll(db, video, plan, ws, settings, bump, refresh=True)
+    _render_stage(db, video, job, ws, plan, source, broll_paths, style, user_id, allowed, settings, bump, phrases)
+
+
+def render_video(db: Session, video_id: str) -> None:
+    video = (
+        db.query(Video)
+        .options(joinedload(Video.project), joinedload(Video.transcript), joinedload(Video.broll_assets))
+        .filter(Video.id == uuid.UUID(video_id))
+        .first()
+    )
+    if not video:
+        logger.error("Video %s not found", video_id)
+        return
+    job = RenderJob(video_id=video.id, status="QUEUED", current_stage="QUEUED", started_at=datetime.utcnow())
+    db.add(job)
     db.commit()
+    ws = workspace_dir(str(video.id))
+    settings = get_settings()
+    allowed = [settings.storage_dir.resolve(), settings.assets_dir.resolve()]
+    try:
+        user_id = video.project.user_id
+        style = get_style(db, user_id)
+
+        def bump(status: str, stage: str) -> None:
+            _set_status(db, video, status, stage)
+            job.status = status
+            job.current_stage = stage
+            job.progress = video.progress
+            db.commit()
+
+        source = Path(video.local_path) if video.local_path else ws / "source.mp4"
+        if not source.exists():
+            raise RuntimeError("Source file missing; run a full process first")
+        latest_plan = (
+            db.query(EditPlanRow).filter(EditPlanRow.video_id == video.id).order_by(EditPlanRow.version.desc()).first()
+        )
+        if not latest_plan:
+            raise RuntimeError("No edit plan to render")
+        plan = EditPlan.model_validate(latest_plan.plan_json)
+        tx_row = db.query(Transcript).filter(Transcript.video_id == video.id).first()
+        phrases = phrases_from_plan_or_transcript(
+            [p.model_dump() for p in (plan.caption_phrases or [])] if plan.caption_phrases else None,
+            tx_row.segments_json if tx_row and isinstance(tx_row.segments_json, list) else None,
+            words_per_line=plan.caption_style.words_per_line if plan.caption_style else 5,
+        )
+        broll_paths = _broll_from_existing(video, plan)
+        bump("RENDERING", "Rendering from editor")
+        _render_stage(db, video, job, ws, plan, source, broll_paths, style, user_id, allowed, settings, bump, phrases)
+    except Exception as exc:
+        fail(db, video, video.status or video.current_stage or "RENDERING", exc)
+        job.status = "FAILED"
+        job.error_message = traceback.format_exc()[-4000:]
+        job.completed_at = datetime.utcnow()
+        db.commit()
+
+
+def _broll_from_existing(video: Video, plan: EditPlan) -> list[tuple[float, float, str, str]]:
+    unused = list(video.broll_assets or [])
+    paths: list[tuple[float, float, str, str]] = []
+    for seg in plan.segments:
+        if seg.visual != "broll" or not seg.broll_query:
+            continue
+        match = next((a for a in unused if a.query == seg.broll_query and a.local_path), None)
+        if not match:
+            match = next((a for a in unused if a.local_path), None)
+        if not match or not Path(match.local_path).exists():
+            continue
+        unused.remove(match)
+        paths.append((seg.start, seg.end, match.local_path, match.asset_type or "video"))
+    return paths[:8]
+
+
+def _collect_broll(
+    db: Session,
+    video: Video,
+    plan: EditPlan,
+    ws: Path,
+    settings,
+    bump,
+    refresh: bool,
+) -> list[tuple[float, float, str, str]]:
+    bump("SEARCHING_BROLL", "Searching B-roll")
+    if refresh:
+        db.query(BrollAsset).filter(BrollAsset.video_id == video.id).delete()
+        db.commit()
     searcher = get_search_provider()
     broll_paths: list[tuple[float, float, str, str]] = []
     for seg in plan.segments:
@@ -272,7 +366,6 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
             source_url = pick["url"]
             external_id = pick.get("external_id")
             dest = ws / "assets" / f"{external_id or uuid.uuid4()}.{ 'jpg' if asset_type == 'image' else 'mp4' }"
-            # reuse same dest across videos via cache dir
             cache_dir = settings.storage_dir / "broll-cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
             dest = cache_dir / dest.name
@@ -306,8 +399,24 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         broll_paths.append((seg.start, seg.end, local, asset_type))
     db.commit()
     bump("BROLL_READY", "B-roll ready")
+    return broll_paths[:8]
 
-    # Render
+
+def _render_stage(
+    db: Session,
+    video: Video,
+    job: RenderJob,
+    ws: Path,
+    plan: EditPlan,
+    source: Path,
+    broll_paths: list[tuple[float, float, str, str]],
+    style: dict,
+    user_id,
+    allowed: list[Path],
+    settings,
+    bump,
+    phrases: list[dict],
+) -> None:
     bump("RENDERING", "Rendering final video")
     music = pick_music(db, plan.music_category, user_id)
     sfx_events: list[tuple[float, str]] = []
@@ -317,6 +426,19 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         path = sfx_path(db, seg.sfx, user_id)
         if path and Path(path).exists():
             sfx_events.append((seg.start, path))
+
+    caption_video = None
+    if plan.captions_enabled and phrases:
+        try:
+            caption_video = build_caption_overlay_video(
+                phrases,
+                ws / "captions",
+                float(video.duration or 0),
+                enabled=True,
+                style=plan.caption_style,
+            )
+        except Exception:
+            logger.exception("Caption overlay video failed; rendering without burned captions")
 
     output = ws / "final.mp4"
     compose_final(
@@ -329,6 +451,7 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         sfx_events=sfx_events[:12],
         style=style,
         allowed_roots=allowed + [ws, settings.storage_dir / "broll-cache"],
+        caption_video_path=caption_video,
     )
     bump("RENDERED", "Rendered")
 
