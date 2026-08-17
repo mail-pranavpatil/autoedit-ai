@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EditPlan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["video_summary", "tone", "music_category", "segments"],
+  "properties": {
+    "video_summary": { "type": "string" },
+    "tone": { "type": "string" },
+    "music_category": {
+      "type": "string",
+      "enum": ["energetic", "technology", "cinematic", "motivational", "chill"]
+    },
+    "segments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/segment" }
+    }
+  },
+  "$defs": {
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "visual", "broll_query", "broll_type", "effect", "sfx"],
+      "properties": {
+        "start": { "type": "number" },
+        "end": { "type": "number" },
+        "visual": { "type": "string", "enum": ["talking_head", "broll"] },
+        "broll_query": { "type": ["string", "null"] },
+        "broll_type": { "type": ["string", "null"], "enum": ["video", "image", null] },
+        "effect": {
+          "type": "string",
+          "enum": [
+            "none",
+            "slow_zoom_in",
+            "slow_zoom_out",
+            "pan_left",
+            "pan_right",
+            "pan_up",
+            "pan_down",
+            "fade_in",
+            "fade_out"
+          ]
+        },
+        "sfx": {
+          "type": ["string", "null"],
+          "enum": [
+            "whoosh",
+            "pop",
+            "click",
+            "camera_shutter",
+            "notification",
+            "ding",
+            "swipe",
+            "impact",
+            "bubble",
+            "cartoon",
+            null
+          ]
+        }
+      }
+    }
+  }
+}
