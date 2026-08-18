@@ -14,6 +14,7 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_concurrency=settings.worker_concurrency,
     include=["worker.tasks"],
+    task_routes={"worker.publish_youtube": {"queue": "youtube"}},
 )
 
 celery_app.autodiscover_tasks(["worker"])

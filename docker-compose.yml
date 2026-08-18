@@ -72,7 +72,29 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A worker.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2}
+    command: celery -A worker.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2} -Q celery
+
+  youtube-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://autoedit:autoedit@postgres:5432/autoedit
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /data/storage
+      ASSETS_DIR: /data/assets
+    volumes:
+      - ./storage:/data/storage
+      - ./assets:/data/assets
+      - ./services:/app/services
+      - ./packages:/app/packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A worker.celery_app worker --loglevel=info --concurrency=1 -Q youtube
 
   web:
     build:

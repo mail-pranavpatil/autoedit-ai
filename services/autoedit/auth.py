@@ -20,12 +20,21 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
+YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+
 SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/drive.readonly",
+    YOUTUBE_UPLOAD_SCOPE,
 ]
+
+
+def has_youtube_scope(scopes: str | None) -> bool:
+    if not scopes:
+        return False
+    return YOUTUBE_UPLOAD_SCOPE in scopes.split() or YOUTUBE_UPLOAD_SCOPE in scopes
 
 
 def google_auth_url(state: str) -> str:

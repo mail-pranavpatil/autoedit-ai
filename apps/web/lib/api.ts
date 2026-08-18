@@ -20,6 +20,24 @@ export function isProcessingStatus(status?: string | null) {
   return Boolean(status) && !TERMINAL_VIDEO_STATUSES.includes(status as (typeof TERMINAL_VIDEO_STATUSES)[number]);
 }
 
+export function isYoutubePending(video?: Video | null) {
+  const status = video?.youtube?.status;
+  return status === "PENDING" || status === "UPLOADING";
+}
+
+export type YoutubeUpload = {
+  id?: string;
+  status: string;
+  scheduledAt?: string | null;
+  url?: string | null;
+  error?: string | null;
+  title?: string | null;
+  filename?: string | null;
+  videoId?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+};
+
 export type Video = {
   id: string;
   filename: string;
@@ -37,7 +55,19 @@ export type Video = {
   projectId?: string;
   transcript?: { language?: string; fullText?: string; segments?: unknown } | null;
   editPlan?: EditPlan | Record<string, unknown> | null;
+  youtube?: YoutubeUpload | null;
 };
+
+export function formatIst(iso?: string | null) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
 
 export type CaptionWord = { text: string; start: number; end: number };
 export type CaptionPhrase = { start: number; end: number; words: CaptionWord[] };

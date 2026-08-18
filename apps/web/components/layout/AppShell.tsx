@@ -10,6 +10,7 @@ import { API_URL, api } from "@/lib/api";
 const nav = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/projects", label: "Projects" },
+  { href: "/youtube", label: "YouTube" },
   { href: "/assets", label: "Assets" },
   { href: "/style", label: "Style Profile" },
   { href: "/settings", label: "Settings" },

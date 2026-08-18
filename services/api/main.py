@@ -12,7 +12,7 @@ from autoedit.config import get_settings
 from autoedit.db import SessionLocal
 from autoedit.logging_setup import setup_logging
 from autoedit.seed import seed_system_assets
-from api.routes import assets, auth, drive, health, media, projects, settings as settings_routes, videos
+from api.routes import assets, auth, drive, health, media, projects, settings as settings_routes, videos, youtube
 
 setup_logging()
 logger = logging.getLogger("autoedit")
@@ -74,4 +74,5 @@ app.include_router(drive.router)
 app.include_router(videos.router)
 app.include_router(assets.router)
 app.include_router(settings_routes.router)
+app.include_router(youtube.router)
 app.include_router(media.router)

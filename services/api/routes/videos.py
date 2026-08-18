@@ -14,7 +14,7 @@ from autoedit.auth import get_current_user
 from autoedit.captions import phrases_from_plan_or_transcript
 from autoedit.db import get_db
 from autoedit.edit_schema import EditPlan as EditPlanSchema
-from autoedit.models import BrollAsset, EditPlan, Project, RenderJob, User, Video
+from autoedit.models import BrollAsset, EditPlan, Project, RenderJob, User, Video, YoutubeUpload
 from autoedit.pipeline import pick_music
 from api.routes.projects import serialize_video
 
@@ -26,7 +26,12 @@ def _owned_video(db: Session, user: User, video_id: uuid.UUID) -> Video:
     video = (
         db.query(Video)
         .join(Project)
-        .options(joinedload(Video.transcript), joinedload(Video.edit_plans), joinedload(Video.render_jobs))
+        .options(
+            joinedload(Video.transcript),
+            joinedload(Video.edit_plans),
+            joinedload(Video.render_jobs),
+            joinedload(Video.youtube_upload),
+        )
         .filter(Video.id == video_id, Project.user_id == user.id)
         .first()
     )
@@ -83,6 +88,26 @@ def retry_one(video_id: uuid.UUID, user: User = Depends(get_current_user), db: S
     video.updated_at = datetime.utcnow()
     db.commit()
     process_video_task.delay(str(video.id))
+    return serialize_video(video)
+
+
+@router.post("/{video_id}/youtube/retry")
+def retry_youtube(video_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from worker.tasks import publish_youtube_task
+
+    video = _owned_video(db, user, video_id)
+    if video.status != "READY":
+        raise HTTPException(400, "Render the video before uploading to YouTube")
+    if video.youtube_upload and video.youtube_upload.status == "SCHEDULED":
+        raise HTTPException(400, "Already scheduled on YouTube")
+    if video.youtube_upload:
+        video.youtube_upload.status = "PENDING"
+        video.youtube_upload.error_message = None
+    else:
+        db.add(YoutubeUpload(user_id=user.id, video_id=video.id, status="PENDING"))
+    db.commit()
+    db.expire(video, ["youtube_upload"])
+    publish_youtube_task.delay(str(video.id), force=True)
     return serialize_video(video)
 
 

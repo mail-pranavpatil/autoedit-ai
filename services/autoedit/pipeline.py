@@ -335,6 +335,7 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         bump,
         phrases,
         tx_row,
+        from_full_process=True,
     )
 
 
@@ -536,6 +537,7 @@ def _render_stage(
     bump,
     phrases: list[dict],
     tx_row: Transcript | None = None,
+    from_full_process: bool = False,
 ) -> None:
     bump("RENDERING", "Rendering final video")
     music = pick_music(db, plan.music_category, user_id)
@@ -586,6 +588,9 @@ def _render_stage(
     job.completed_at = datetime.utcnow()
     video.local_path = str(source)
     bump("READY", "Ready")
+    from autoedit.youtube import enqueue_youtube_if_needed
+
+    enqueue_youtube_if_needed(db, video, from_full_process=from_full_process)
     for leftover in (ws / "audio.wav", ws / "intermediate"):
         if leftover.is_file():
             leftover.unlink(missing_ok=True)

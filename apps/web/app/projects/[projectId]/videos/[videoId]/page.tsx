@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useState } from "react";
-import { API_URL, api, formatDuration, isProcessingStatus, type Video } from "@/lib/api";
+import { API_URL, api, formatDuration, formatIst, isProcessingStatus, isYoutubePending, type Video } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -21,7 +21,7 @@ export default function VideoDetailPage() {
     return next;
   }, [videoId]);
 
-  const polling = !video || starting || isProcessingStatus(video.status);
+  const polling = !video || starting || isProcessingStatus(video.status) || isYoutubePending(video);
   usePolling(polling, load, 1500);
 
   if (!video) return <p className="text-muted">Loading video…</p>;
@@ -71,6 +71,64 @@ export default function VideoDetailPage() {
             Size: {video.width}×{video.height}
           </div>
         </div>
+        {video.status === "READY" && (
+          <div className="rounded-2xl border border-line bg-panel p-5 text-sm">
+            <h2 className="flex items-center gap-2 font-medium">
+              YouTube
+              {video.youtube?.status ? <StatusBadge status={video.youtube.status} /> : null}
+            </h2>
+            {video.youtube?.status === "SCHEDULED" ? (
+              <>
+                <p className="mt-2">
+                  Scheduled {formatIst(video.youtube.scheduledAt)} IST
+                </p>
+                {video.youtube.url && (
+                  <a className="mt-2 inline-block underline" href={video.youtube.url} target="_blank" rel="noreferrer">
+                    Open on YouTube
+                  </a>
+                )}
+              </>
+            ) : video.youtube?.status === "FAILED" ? (
+              <>
+                <p className="mt-2 text-red-200/80">{video.youtube.error || "Upload failed"}</p>
+                <Button
+                  className="mt-4"
+                  onClick={async () => {
+                    try {
+                      const next = await api<Video>(`/api/videos/${video.id}/youtube/retry`, { method: "POST" });
+                      setVideo(next);
+                    } catch (e) {
+                      toast((e as Error).message, "err");
+                    }
+                  }}
+                >
+                  Retry YouTube upload
+                </Button>
+              </>
+            ) : video.youtube?.status === "PENDING" || video.youtube?.status === "UPLOADING" ? (
+              <p className="mt-2 text-muted">Uploading and scheduling the next IST slot…</p>
+            ) : (
+              <>
+                <p className="mt-2 text-muted">
+                  Not queued. Reconnect Google with YouTube access in Settings if needed.
+                </p>
+                <Button
+                  className="mt-4"
+                  onClick={async () => {
+                    try {
+                      const next = await api<Video>(`/api/videos/${video.id}/youtube/retry`, { method: "POST" });
+                      setVideo(next);
+                    } catch (e) {
+                      toast((e as Error).message, "err");
+                    }
+                  }}
+                >
+                  Upload to YouTube
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         {video.status === "FAILED" && (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-5">
             <p className="font-medium">Failed at {video.failedStage}</p>

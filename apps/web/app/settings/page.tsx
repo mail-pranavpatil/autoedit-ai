@@ -19,8 +19,31 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-semibold">Settings</h1>
       <section className="mt-6 rounded-2xl border border-line bg-panel p-5">
         <h2 className="font-medium">Integrations</h2>
-        <p className="mt-2 text-sm text-muted">Google sign-in is also Drive access. Tokens stay on the server.</p>
+        <p className="mt-2 text-sm text-muted">Google sign-in is also Drive and YouTube upload access. Tokens stay on the server.</p>
         <p className="mt-3 text-sm">Drive connected: {data?.googleConnected ? "yes" : "no"}</p>
+        <p className="text-sm">YouTube connected: {data?.youtubeConnected ? "yes" : "no"}</p>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={Boolean(data?.youtubeAutoUpload)}
+            onChange={async (e) => {
+              const youtubeAutoUpload = e.target.checked;
+              try {
+                const next = await api<{ youtubeAutoUpload: boolean; youtubeConnected: boolean }>("/api/settings/youtube", {
+                  method: "PUT",
+                  body: JSON.stringify({ youtubeAutoUpload }),
+                });
+                setData((prev) => ({ ...(prev || {}), ...next }));
+              } catch (err) {
+                toast((err as Error).message, "err");
+              }
+            }}
+          />
+          Auto-upload finished edits to YouTube
+        </label>
+        <p className="mt-2 text-xs text-muted">
+          Publishes publicly at the next free IST slot: 7:00, 14:00, 18:00, or 21:00. Enable YouTube Data API v3, then reconnect Google.
+        </p>
         <a className="mt-3 inline-block text-sm underline" href={`${API_URL}/api/auth/google`}>
           Reconnect Google
         </a>

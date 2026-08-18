@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from autoedit.auth import get_current_user
 from autoedit.db import get_db
 from autoedit.models import Project, User, Video
+from autoedit.youtube import serialize_youtube
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -67,7 +68,7 @@ def create_project(body: CreateProject, user: User = Depends(get_current_user), 
 def get_project(project_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = (
         db.query(Project)
-        .options(joinedload(Project.videos))
+        .options(joinedload(Project.videos).joinedload(Video.youtube_upload))
         .filter(Project.id == project_id, Project.user_id == user.id)
         .first()
     )
@@ -94,6 +95,7 @@ def serialize_video(v: Video) -> dict:
         "failedStage": v.failed_stage,
         "retryCount": v.retry_count,
         "createdAt": v.created_at.isoformat() if v.created_at else None,
+        "youtube": serialize_youtube(getattr(v, "youtube_upload", None)),
     }
 
 

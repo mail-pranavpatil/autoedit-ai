@@ -31,12 +31,14 @@ class User(Base):
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     picture_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    youtube_auto_upload: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     drive_connections: Mapped[list[DriveConnection]] = relationship(back_populates="user")
     projects: Mapped[list[Project]] = relationship(back_populates="user")
     style_profile: Mapped[StyleProfile | None] = relationship(back_populates="user", uselist=False)
+    youtube_uploads: Mapped[list[YoutubeUpload]] = relationship(back_populates="user")
 
 
 class DriveConnection(Base):
@@ -108,10 +110,15 @@ class Video(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     project: Mapped[Project] = relationship(back_populates="videos")
-    transcript: Mapped[Transcript | None] = relationship(back_populates="video", uselist=False)
-    edit_plans: Mapped[list[EditPlan]] = relationship(back_populates="video")
-    broll_assets: Mapped[list[BrollAsset]] = relationship(back_populates="video")
-    render_jobs: Mapped[list[RenderJob]] = relationship(back_populates="video")
+    transcript: Mapped[Transcript | None] = relationship(
+        back_populates="video", uselist=False, cascade="all, delete-orphan"
+    )
+    edit_plans: Mapped[list[EditPlan]] = relationship(back_populates="video", cascade="all, delete-orphan")
+    broll_assets: Mapped[list[BrollAsset]] = relationship(back_populates="video", cascade="all, delete-orphan")
+    render_jobs: Mapped[list[RenderJob]] = relationship(back_populates="video", cascade="all, delete-orphan")
+    youtube_upload: Mapped[YoutubeUpload | None] = relationship(
+        back_populates="video", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class Transcript(Base):
@@ -175,6 +182,26 @@ class RenderJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     video: Mapped[Video] = relationship(back_populates="render_jobs")
+
+
+class YoutubeUpload(Base):
+    __tablename__ = "youtube_uploads"
+    __table_args__ = (UniqueConstraint("user_id", "scheduled_at", name="uq_youtube_user_slot"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pk)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    video_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("videos.id", ondelete="CASCADE"), unique=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    youtube_video_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    youtube_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped[User] = relationship(back_populates="youtube_uploads")
+    video: Mapped[Video] = relationship(back_populates="youtube_upload")
 
 
 class LibraryAsset(Base):

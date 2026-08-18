@@ -10,6 +10,9 @@ const colors: Record<string, string> = {
   TRANSCRIBING: "bg-amber-500/20 text-amber-300",
   PLANNING: "bg-amber-500/20 text-amber-300",
   SEARCHING_BROLL: "bg-amber-500/20 text-amber-300",
+  SCHEDULED: "bg-emerald-500/20 text-emerald-300",
+  PENDING: "bg-sky-500/20 text-sky-300",
+  UPLOADING: "bg-amber-500/20 text-amber-300",
 };
 
 export function StatusBadge({ status }: { status: string }) {

@@ -62,3 +62,17 @@ def render_video_task(self, video_id: str, plan_json: dict | None = None) -> str
         raise
     finally:
         db.close()
+
+
+@celery_app.task(name="worker.publish_youtube", bind=True, max_retries=0)
+def publish_youtube_task(self, video_id: str, force: bool = False) -> str:
+    from autoedit.youtube import publish_video_to_youtube
+
+    db = SessionLocal()
+    try:
+        return publish_video_to_youtube(db, video_id, force=force)
+    except Exception:
+        logger.exception("publish_youtube_task failed for %s", video_id)
+        raise
+    finally:
+        db.close()

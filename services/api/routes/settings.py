@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
-from autoedit.auth import get_current_user
+from autoedit.auth import get_current_user, has_youtube_scope
 from autoedit.config import get_settings
 from autoedit.db import get_db
 from autoedit.edit_schema import merge_style_profile
@@ -16,6 +16,10 @@ router = APIRouter(prefix="/api", tags=["settings"])
 
 class StyleBody(BaseModel):
     profile: dict
+
+
+class YoutubeSettingsBody(BaseModel):
+    youtubeAutoUpload: bool
 
 
 @router.get("/style")
@@ -45,9 +49,26 @@ def get_settings_payload(user: User = Depends(get_current_user), db: Session = D
     s = get_settings()
     return {
         "googleConnected": bool(conn),
+        "youtubeConnected": bool(conn and has_youtube_scope(conn.scopes)),
+        "youtubeAutoUpload": bool(user.youtube_auto_upload),
         "workerConcurrency": s.worker_concurrency,
         "transcriptionProvider": s.transcription_provider,
         "llmProvider": s.llm_provider,
         "hasOpenAIKey": bool(s.openai_api_key),
         "hasPexelsKey": bool(s.pexels_api_key),
+    }
+
+
+@router.put("/settings/youtube")
+def put_youtube_settings(
+    body: YoutubeSettingsBody,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user.youtube_auto_upload = body.youtubeAutoUpload
+    db.commit()
+    conn = db.query(DriveConnection).filter(DriveConnection.user_id == user.id).first()
+    return {
+        "youtubeConnected": bool(conn and has_youtube_scope(conn.scopes)),
+        "youtubeAutoUpload": bool(user.youtube_auto_upload),
     }
