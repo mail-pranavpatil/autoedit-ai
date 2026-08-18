@@ -23,8 +23,9 @@ export function Inspector({
   const phrase = selection?.type === "caption" ? phrases[selection.index] : null;
 
   return (
-    <aside className="flex h-full flex-col overflow-y-auto border-l border-white/10 bg-[#16181f] p-4 text-sm">
-      <div className="text-xs uppercase tracking-wide text-white/40">Inspector</div>
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden border-l border-white/10 bg-[#16181f] text-sm">
+      <div className="shrink-0 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-wide text-white/40">Inspector</div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-4">
       {!selection && <p className="mt-4 text-white/50">Select a clip on the timeline.</p>}
       {selection?.type === "aroll" && (
         <p className="mt-4 text-white/70">Talking-head A-roll spans the full {duration.toFixed(1)}s clip. Trim B-roll overlays to reveal more of this track.</p>
@@ -55,7 +56,7 @@ export function Inspector({
               <input
                 type="number"
                 step="0.1"
-                className="mt-1 w-full rounded bg-white/5 px-2 py-1"
+                className="mt-1 w-full rounded-lg border border-white/15 bg-[#0e1014] px-2 py-1 text-white"
                 value={seg.start.toFixed(2)}
                 onChange={(e) => {
                   const start = Number(e.target.value);
@@ -69,7 +70,7 @@ export function Inspector({
               <input
                 type="number"
                 step="0.1"
-                className="mt-1 w-full rounded bg-white/5 px-2 py-1"
+                className="mt-1 w-full rounded-lg border border-white/15 bg-[#0e1014] px-2 py-1 text-white"
                 value={seg.end.toFixed(2)}
                 onChange={(e) => {
                   const end = Number(e.target.value);
@@ -97,7 +98,7 @@ export function Inspector({
         <label className="mt-4 block">
           <div className="text-white/60">Caption text</div>
           <textarea
-            className="mt-1 h-24 w-full rounded-lg bg-white/5 p-2 text-white"
+            className="mt-1 h-24 w-full rounded-lg border border-white/15 bg-[#0e1014] p-2 text-white"
             value={phrase.words.map((w) => w.text).join(" ")}
             onChange={(e) => {
               const parts = e.target.value.trim().split(/\s+/).filter(Boolean);
@@ -114,6 +115,7 @@ export function Inspector({
           />
         </label>
       )}
+      </div>
     </aside>
   );
 }

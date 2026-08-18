@@ -8,13 +8,23 @@ from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError
 
 from autoedit.config import get_settings
-from autoedit.captions import build_caption_overlay_video, phrases_from_plan_or_transcript
+from autoedit.captions import phrases_from_plan_or_transcript, render_caption_pngs, write_caption_concat
 from autoedit.compose import compose_final
 from autoedit.drive import download_file, download_url
-from autoedit.edit_schema import DEFAULT_STYLE_PROFILE, EditPlan, STAGE_PROGRESS, plan_is_weak
+from autoedit.edit_schema import (
+    EditPlan,
+    MAX_VISUAL_ASSETS,
+    STAGE_PROGRESS,
+    apply_style_defaults,
+    merge_style_profile,
+    plan_is_weak,
+)
+from autoedit.mentions import enforce_visual_cadence
+from autoedit.music import MUSIC_IDS, choose_track
 from autoedit.media import (
     extract_audio,
     extract_thumbnail,
@@ -35,6 +45,7 @@ from autoedit.models import (
 )
 from autoedit.providers import get_llm_provider, get_search_provider, get_transcription_provider
 from autoedit.security import decrypt_secret, hash_file
+from autoedit.sfx.engine import attach_sfx, mix_payload
 
 logger = logging.getLogger("autoedit")
 
@@ -64,12 +75,23 @@ def fail(db: Session, video: Video, stage: str, exc: Exception) -> None:
 
 def get_style(db: Session, user_id) -> dict:
     row = db.query(StyleProfile).filter(StyleProfile.user_id == user_id).first()
-    if not row:
-        return dict(DEFAULT_STYLE_PROFILE)
-    return {**DEFAULT_STYLE_PROFILE, **(row.profile_json or {})}
+    merged = merge_style_profile(row.profile_json if row else None)
+    cap = merged.get("caption_style") or {}
+    logger.info(
+        "Loaded style profile user=%s saved=%s preset=%s wpl=%s music=%s",
+        user_id,
+        bool(row),
+        cap.get("preset"),
+        cap.get("words_per_line"),
+        merged.get("preferred_music_category"),
+    )
+    return merged
 
 
 def pick_music(db: Session, category: str, user_id) -> LibraryAsset | None:
+    from autoedit.music import coerce_music_id
+
+    category = coerce_music_id(category)
     q = (
         db.query(LibraryAsset)
         .filter(LibraryAsset.asset_type == "music", LibraryAsset.enabled.is_(True))
@@ -79,18 +101,33 @@ def pick_music(db: Session, category: str, user_id) -> LibraryAsset | None:
     return match or q.first()
 
 
-def sfx_path(db: Session, name: str, user_id) -> str | None:
-    row = (
-        db.query(LibraryAsset)
-        .filter(
-            LibraryAsset.asset_type == "sfx",
-            LibraryAsset.enabled.is_(True),
-            LibraryAsset.name == name,
-        )
-        .filter((LibraryAsset.user_id == user_id) | (LibraryAsset.is_system.is_(True)))
-        .first()
+def _transcript_payload(tx_row: Transcript | None) -> dict | None:
+    if not tx_row:
+        return None
+    return {
+        "language": tx_row.language,
+        "full_text": tx_row.full_text,
+        "segments": tx_row.segments_json,
+    }
+
+
+def _with_sfx(
+    plan: EditPlan,
+    phrases: list[dict],
+    tx_row: Transcript | None,
+    style: dict,
+    ws: Path,
+    has_music: bool,
+) -> EditPlan:
+    log_path = ws / "sfx_decisions.log"
+    return attach_sfx(
+        plan,
+        phrases=phrases,
+        transcript=_transcript_payload(tx_row),
+        style=style,
+        has_music=has_music,
+        log_path=log_path,
     )
-    return row.local_path if row else None
 
 
 def process_video(db: Session, video_id: str, access_token: str | None = None) -> None:
@@ -234,30 +271,74 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         }
         plan_dict = get_llm_provider().plan_edit(transcript_payload, float(video.duration or 0), metadata, style)
         plan = EditPlan.model_validate(plan_dict)
-        row = EditPlanRow(video_id=video.id, version=1, plan_json=plan.model_dump())
+        row = EditPlanRow(video_id=video.id, version=1, plan_json=plan.model_dump(mode="json"))
         db.add(row)
-        (ws / "edit_plan.json").write_text(json.dumps(plan.model_dump(), indent=2))
         db.commit()
         latest_plan = row
-    plan = EditPlan.model_validate(latest_plan.plan_json)
+
+    # Always restamp the saved style profile. Reusing an old plan used to skip this,
+    # so captions/music stayed on whatever the first process wrote (usually Classic).
+    plan = apply_style_defaults(EditPlan.model_validate(latest_plan.plan_json), style)
+    pref = style.get("preferred_music_category")
+    if pref not in MUSIC_IDS:
+        chosen = choose_track(
+            summary=plan.video_summary,
+            tone=plan.tone,
+            transcript=tx_row.full_text if tx_row else "",
+        )
+        plan = plan.model_copy(update={"music_category": chosen})
+    cap = plan.caption_style
+    logger.info(
+        "Applied style profile video=%s preset=%s size=%s wpl=%s music=%s captions=%s",
+        video.id,
+        cap.preset if cap else None,
+        cap.size if cap else None,
+        cap.words_per_line if cap else None,
+        plan.music_category,
+        plan.captions_enabled,
+    )
     bump("PLAN_READY", "Edit plan ready")
 
     phrases = phrases_from_plan_or_transcript(
-        [p.model_dump() for p in (plan.caption_phrases or [])] if plan.caption_phrases else None,
+        None,
         tx_row.segments_json if isinstance(tx_row.segments_json, list) else None,
         words_per_line=plan.caption_style.words_per_line if plan.caption_style else 5,
     )
-    if phrases and not plan.caption_phrases:
-        plan = plan.model_copy(update={"caption_phrases": phrases})
-        latest_plan.plan_json = plan.model_dump()
-        db.commit()
-        (ws / "edit_plan.json").write_text(json.dumps(plan.model_dump(), indent=2))
+    plan = plan.model_copy(update={"caption_phrases": phrases or None})
+    tx_payload = _transcript_payload(tx_row)
+    plan = enforce_visual_cadence(plan, tx_payload, style)
+    dumped = plan.model_dump(mode="json")
+    latest_plan.plan_json = dumped
+    flag_modified(latest_plan, "plan_json")
+    db.commit()
+    (ws / "edit_plan.json").write_text(json.dumps(dumped, indent=2))
+    (ws / "caption_style.json").write_text(json.dumps((cap.model_dump(mode="json") if cap else {}), indent=2))
 
-    broll_paths = _collect_broll(db, video, plan, ws, settings, bump, refresh=True)
-    _render_stage(db, video, job, ws, plan, source, broll_paths, style, user_id, allowed, settings, bump, phrases)
+    broll_paths, plan = _collect_broll(db, video, plan, ws, settings, bump, refresh=True)
+    dumped = plan.model_dump(mode="json")
+    latest_plan.plan_json = dumped
+    flag_modified(latest_plan, "plan_json")
+    db.commit()
+    (ws / "edit_plan.json").write_text(json.dumps(dumped, indent=2))
+    _render_stage(
+        db,
+        video,
+        job,
+        ws,
+        plan,
+        source,
+        broll_paths,
+        style,
+        user_id,
+        allowed,
+        settings,
+        bump,
+        phrases,
+        tx_row,
+    )
 
 
-def render_video(db: Session, video_id: str) -> None:
+def render_video(db: Session, video_id: str, plan_json: dict | None = None) -> None:
     video = (
         db.query(Video)
         .options(joinedload(Video.project), joinedload(Video.transcript), joinedload(Video.broll_assets))
@@ -287,12 +368,32 @@ def render_video(db: Session, video_id: str) -> None:
         source = Path(video.local_path) if video.local_path else ws / "source.mp4"
         if not source.exists():
             raise RuntimeError("Source file missing; run a full process first")
-        latest_plan = (
-            db.query(EditPlanRow).filter(EditPlanRow.video_id == video.id).order_by(EditPlanRow.version.desc()).first()
+        if plan_json:
+            plan = EditPlan.model_validate(plan_json)
+            latest_plan = (
+                db.query(EditPlanRow).filter(EditPlanRow.video_id == video.id).order_by(EditPlanRow.version.desc()).first()
+            )
+            if not latest_plan or latest_plan.plan_json != plan.model_dump(mode="json"):
+                version = (latest_plan.version + 1) if latest_plan else 1
+                latest_plan = EditPlanRow(video_id=video.id, version=version, plan_json=plan.model_dump(mode="json"))
+                db.add(latest_plan)
+                db.commit()
+        else:
+            latest_plan = (
+                db.query(EditPlanRow).filter(EditPlanRow.video_id == video.id).order_by(EditPlanRow.version.desc()).first()
+            )
+            if not latest_plan:
+                raise RuntimeError("No edit plan to render")
+            plan = EditPlan.model_validate(latest_plan.plan_json)
+        logger.info(
+            "Rendering %s with caption preset=%s active=%s font=%s size=%s",
+            video.id,
+            plan.caption_style.preset,
+            plan.caption_style.active_color,
+            plan.caption_style.font,
+            plan.caption_style.size,
         )
-        if not latest_plan:
-            raise RuntimeError("No edit plan to render")
-        plan = EditPlan.model_validate(latest_plan.plan_json)
+        (ws / "caption_style.json").write_text(json.dumps(plan.caption_style.model_dump(mode="json"), indent=2))
         tx_row = db.query(Transcript).filter(Transcript.video_id == video.id).first()
         phrases = phrases_from_plan_or_transcript(
             [p.model_dump() for p in (plan.caption_phrases or [])] if plan.caption_phrases else None,
@@ -301,7 +402,22 @@ def render_video(db: Session, video_id: str) -> None:
         )
         broll_paths = _broll_from_existing(video, plan)
         bump("RENDERING", "Rendering from editor")
-        _render_stage(db, video, job, ws, plan, source, broll_paths, style, user_id, allowed, settings, bump, phrases)
+        _render_stage(
+            db,
+            video,
+            job,
+            ws,
+            plan,
+            source,
+            broll_paths,
+            style,
+            user_id,
+            allowed,
+            settings,
+            bump,
+            phrases,
+            tx_row,
+        )
     except Exception as exc:
         fail(db, video, video.status or video.current_stage or "RENDERING", exc)
         job.status = "FAILED"
@@ -323,7 +439,7 @@ def _broll_from_existing(video: Video, plan: EditPlan) -> list[tuple[float, floa
             continue
         unused.remove(match)
         paths.append((seg.start, seg.end, match.local_path, match.asset_type or "video"))
-    return paths[:8]
+    return paths[:MAX_VISUAL_ASSETS]
 
 
 def _collect_broll(
@@ -334,16 +450,19 @@ def _collect_broll(
     settings,
     bump,
     refresh: bool,
-) -> list[tuple[float, float, str, str]]:
+) -> tuple[list[tuple[float, float, str, str]], EditPlan]:
     bump("SEARCHING_BROLL", "Searching B-roll")
     if refresh:
         db.query(BrollAsset).filter(BrollAsset.video_id == video.id).delete()
         db.commit()
     searcher = get_search_provider()
     broll_paths: list[tuple[float, float, str, str]] = []
+
     for seg in plan.segments:
         if seg.visual != "broll" or not seg.broll_query:
             continue
+        if len(broll_paths) >= MAX_VISUAL_ASSETS:
+            break
         want = seg.broll_type or "video"
         cache_key = f"pexels:{want}:{seg.broll_query.lower().strip()}"
         cached = db.query(AssetCache).filter(AssetCache.cache_key == cache_key).first()
@@ -399,7 +518,7 @@ def _collect_broll(
         broll_paths.append((seg.start, seg.end, local, asset_type))
     db.commit()
     bump("BROLL_READY", "B-roll ready")
-    return broll_paths[:8]
+    return broll_paths[:MAX_VISUAL_ASSETS], plan
 
 
 def _render_stage(
@@ -416,29 +535,33 @@ def _render_stage(
     settings,
     bump,
     phrases: list[dict],
+    tx_row: Transcript | None = None,
 ) -> None:
     bump("RENDERING", "Rendering final video")
     music = pick_music(db, plan.music_category, user_id)
-    sfx_events: list[tuple[float, str]] = []
-    for seg in plan.segments:
-        if not seg.sfx:
-            continue
-        path = sfx_path(db, seg.sfx, user_id)
-        if path and Path(path).exists():
-            sfx_events.append((seg.start, path))
+    plan = _with_sfx(plan, phrases, tx_row, style, ws, has_music=bool(music and music.local_path))
+    latest_plan = (
+        db.query(EditPlanRow).filter(EditPlanRow.video_id == video.id).order_by(EditPlanRow.version.desc()).first()
+    )
+    if latest_plan:
+        latest_plan.plan_json = plan.model_dump(mode="json")
+        db.commit()
+    (ws / "edit_plan.json").write_text(json.dumps(plan.model_dump(mode="json"), indent=2))
+    sfx_events = mix_payload(plan)
+    logger.info("Render %s mixing %s SFX", video.id, len(sfx_events))
 
-    caption_video = None
+    caption_concat: str | None = None
     if plan.captions_enabled and phrases:
-        try:
-            caption_video = build_caption_overlay_video(
-                phrases,
-                ws / "captions",
-                float(video.duration or 0),
-                enabled=True,
-                style=plan.caption_style,
-            )
-        except Exception:
-            logger.exception("Caption overlay video failed; rendering without burned captions")
+        caption_overlays = render_caption_pngs(
+            phrases,
+            ws / "captions",
+            float(video.duration or 0),
+            enabled=True,
+            style=plan.caption_style.model_dump(mode="json"),
+        )
+        caption_concat = write_caption_concat(caption_overlays, ws / "captions", float(video.duration or 0))
+        if not caption_concat:
+            logger.warning("Captions enabled but no overlay frames were generated")
 
     output = ws / "final.mp4"
     compose_final(
@@ -446,12 +569,12 @@ def _render_stage(
         output_path=str(output),
         plan=plan,
         duration=float(video.duration or 0),
-        broll_paths=broll_paths[:8],
+        broll_paths=broll_paths[:MAX_VISUAL_ASSETS],
         music_path=music.local_path if music else None,
-        sfx_events=sfx_events[:12],
+        sfx_events=sfx_events,
         style=style,
         allowed_roots=allowed + [ws, settings.storage_dir / "broll-cache"],
-        caption_video_path=caption_video,
+        caption_concat_path=caption_concat,
     )
     bump("RENDERED", "Rendered")
 

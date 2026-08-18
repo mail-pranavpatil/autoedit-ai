@@ -57,6 +57,96 @@ def test_caption_presets_and_size():
     assert hex_to_rgba("#FFFFFF")[0] == 255
 
 
+def test_style_profile_applies_caption_defaults():
+    from autoedit.edit_schema import EditPlan, apply_style_defaults, caption_style_from_preset, merge_style_profile
+
+    merged = merge_style_profile(
+        {
+            "caption_style": {"preset": "hormozi", "words_per_line": 3},
+            "preferred_music_category": "cornfield_chase",
+            "music_volume": 0.12,
+            "captions_enabled": True,
+        }
+    )
+    assert merged["caption_style"]["preset"] == "hormozi"
+    assert merged["caption_style"]["uppercase"] is True
+    assert merged["caption_style"]["words_per_line"] == 3
+    plan = EditPlan.model_validate(
+        {
+            "video_summary": "demo",
+            "tone": "energetic",
+            "music_category": "technology",
+            "segments": [
+                {
+                    "start": 0,
+                    "end": 2,
+                    "visual": "talking_head",
+                    "broll_query": None,
+                    "broll_type": None,
+                    "effect": "none",
+                    "sfx": None,
+                }
+            ],
+        }
+    )
+    applied = apply_style_defaults(plan, merged)
+    assert applied.caption_style.preset == "hormozi"
+    assert applied.caption_style.words_per_line == 3
+    assert applied.music_category == "cornfield_chase"
+    assert applied.music_volume == 0.12
+    assert caption_style_from_preset("hormozi").active_color == "#FFE500"
+
+    already_planned = plan.model_copy(update={"caption_style": caption_style_from_preset("classic")})
+    restamped = apply_style_defaults(already_planned, merged)
+    assert restamped.caption_style.preset == "hormozi"
+    assert restamped.caption_style.words_per_line == 3
+
+
+def test_edit_plan_keeps_neon_style():
+    from autoedit.edit_schema import EditPlan, caption_style_from_preset
+
+    plan = EditPlan.model_validate(
+        {
+            "video_summary": "demo",
+            "tone": "energetic",
+            "music_category": "technology",
+            "captions_enabled": True,
+            "caption_style": caption_style_from_preset("neon").model_dump(),
+            "segments": [
+                {
+                    "start": 0,
+                    "end": 2,
+                    "visual": "talking_head",
+                    "broll_query": None,
+                    "broll_type": None,
+                    "effect": "none",
+                    "sfx": None,
+                }
+            ],
+        }
+    )
+    dumped = plan.model_dump()
+    assert dumped["caption_style"]["preset"] == "neon"
+    assert dumped["caption_style"]["active_color"] == "#5CFF9F"
+
+
+def test_write_caption_concat(tmp_path):
+    from pathlib import Path
+
+    from autoedit.captions import render_blank_png, write_caption_concat
+
+    a = tmp_path / "a.png"
+    b = tmp_path / "b.png"
+    render_blank_png(a)
+    render_blank_png(b)
+    path = write_caption_concat([(0.0, 0.4, str(a)), (0.4, 1.0, str(b))], tmp_path, 1.0)
+    assert path
+    text = Path(path).read_text()
+    assert "ffconcat version 1.0" in text
+    assert "duration 0.4000" in text
+    assert str(a.resolve()) in text
+
+
 def test_render_pill_png(tmp_path):
     from autoedit.captions import find_serif_font, render_pill_png
     from autoedit.edit_schema import CaptionStyle

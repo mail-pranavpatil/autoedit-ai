@@ -2,48 +2,27 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { API_URL, api, formatDuration, type Video } from "@/lib/api";
+import { useCallback, useState } from "react";
+import { API_URL, api, formatDuration, isProcessingStatus, type Video } from "@/lib/api";
+import { usePolling } from "@/lib/usePolling";
 import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { toast } from "@/components/common/Toast";
-import { ProcessingConsole, isProcessingStatus } from "@/components/video/ProcessingConsole";
+import { ProcessingConsole } from "@/components/video/ProcessingConsole";
 
 export default function VideoDetailPage() {
   const { projectId, videoId } = useParams<{ projectId: string; videoId: string }>();
   const [video, setVideo] = useState<Video | null>(null);
   const [starting, setStarting] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     const next = await api<Video>(`/api/videos/${videoId}`);
     setVideo(next);
     return next;
-  }
+  }, [videoId]);
 
-  const polling = !video || isProcessingStatus(video.status) || starting;
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    let cancelled = false;
-
-    async function tick() {
-      try {
-        const next = await load();
-        if (cancelled) return;
-        if (isProcessingStatus(next.status)) {
-          timer = setTimeout(tick, 2000);
-        }
-      } catch (e) {
-        if (!cancelled) toast((e as Error).message, "err");
-      }
-    }
-
-    tick();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [videoId, polling]);
+  const polling = !video || starting || isProcessingStatus(video.status);
+  usePolling(polling, load, 1500);
 
   if (!video) return <p className="text-muted">Loading video…</p>;
   const plan = video.editPlan as { video_summary?: string; tone?: string; music_category?: string; segments?: unknown[] } | null;
@@ -130,7 +109,7 @@ export default function VideoDetailPage() {
               <Link href={`/projects/${projectId}/videos/${video.id}/editor`}>
                 <Button>Open editor</Button>
               </Link>
-              <a href={`${API_URL}/api/videos/${video.id}/download`}>
+              <a href={`${API_URL}/api/videos/${video.id}/download?t=${video.id}`}>
                 <Button variant="secondary">Download video</Button>
               </a>
             </>

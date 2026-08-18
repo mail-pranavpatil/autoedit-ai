@@ -24,7 +24,7 @@ def serialize_project(project: Project) -> dict:
         "totalVideos": len(videos),
         "readyVideos": sum(1 for v in videos if v.status == "READY"),
         "processingVideos": sum(
-            1 for v in videos if v.status not in {"READY", "FAILED", "DISCOVERED", "DOWNLOADED"}
+            1 for v in videos if v.status not in {"READY", "FAILED", "DISCOVERED"}
         ),
         "failedVideos": sum(1 for v in videos if v.status == "FAILED"),
         "queuedVideos": sum(1 for v in videos if v.status in {"QUEUED", "DISCOVERED"}),
@@ -121,21 +121,7 @@ def project_progress(project_id: uuid.UUID, user: User = Depends(get_current_use
     return {
         **serialize_project(project),
         "videos": [serialize_video(v) for v in videos],
-        "active": any(v.status not in {"READY", "FAILED", "DISCOVERED", "DOWNLOADED", "PROBING"} or v.status == "QUEUED" for v in videos)
-        or any(
-            v.status
-            in {
-                "QUEUED",
-                "DOWNLOADING",
-                "PROBING",
-                "TRANSCRIBING",
-                "PLANNING",
-                "SEARCHING_BROLL",
-                "RENDERING",
-                "VALIDATING",
-            }
-            for v in videos
-        ),
+        "active": any(v.status not in {"READY", "FAILED", "DISCOVERED"} for v in videos),
     }
 
 

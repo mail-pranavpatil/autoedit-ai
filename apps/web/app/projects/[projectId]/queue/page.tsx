@@ -2,45 +2,30 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { api, type Project, type Video } from "@/lib/api";
+import { useCallback, useState } from "react";
+import { api, isProcessingStatus, type Project, type Video } from "@/lib/api";
+import { usePolling } from "@/lib/usePolling";
 import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { toast } from "@/components/common/Toast";
+import { SmoothPercent } from "@/lib/useSmoothProgress";
 
 export default function QueuePage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [data, setData] = useState<Project | null>(null);
   const [drawer, setDrawer] = useState<Video | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     const p = await api<Project>(`/api/projects/${projectId}/progress`);
     setData(p);
     return p;
-  }
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    let cancelled = false;
-    async function tick() {
-      try {
-        const p = await load();
-        const active = (p.videos || []).some((v) =>
-          ["QUEUED", "DOWNLOADING", "PROBING", "TRANSCRIBING", "PLANNING", "SEARCHING_BROLL", "RENDERING", "VALIDATING"].includes(
-            v.status
-          )
-        );
-        if (!cancelled && active) timer = setTimeout(tick, 3000);
-      } catch (e) {
-        toast((e as Error).message, "err");
-      }
-    }
-    tick();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
   }, [projectId]);
+
+  const active =
+    !data ||
+    Boolean(data.active) ||
+    (data.videos || []).some((v) => isProcessingStatus(v.status));
+  usePolling(active, load, 1500);
 
   if (!data) return <p className="text-muted">Loading queue…</p>;
   const videos = data.videos || [];
@@ -96,7 +81,9 @@ export default function QueuePage() {
                   <StatusBadge status={v.status} />
                 </td>
                 <td className="p-3 text-muted">{v.currentStage || "—"}</td>
-                <td className="p-3">{v.progress}%</td>
+                <td className="p-3">
+                  <SmoothPercent progress={v.progress || 0} status={v.status} />
+                </td>
                 <td className="p-3">
                   <button className="text-accent" onClick={() => setDrawer(v)}>
                     Details

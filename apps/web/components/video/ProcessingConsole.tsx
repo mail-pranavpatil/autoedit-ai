@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Video } from "@/lib/api";
+import { type Video } from "@/lib/api";
+import { formatProgressPct, useSmoothProgress } from "@/lib/useSmoothProgress";
 
 export const PROCESS_STEPS = [
   { status: "QUEUED", title: "Queued", line: "Starting a new edit job…" },
@@ -22,9 +23,7 @@ export const PROCESS_STEPS = [
 
 const ORDER = PROCESS_STEPS.map((s) => s.status);
 
-export function isProcessingStatus(status: string) {
-  return !["READY", "FAILED", "DISCOVERED"].includes(status);
-}
+export { isProcessingStatus } from "@/lib/api";
 
 function resolveStepIndex(status: string, failedStage?: string | null) {
   if (status === "FAILED") {
@@ -72,34 +71,28 @@ export function ProcessingConsole({ video }: { video: Video }) {
   }, [failed, idx, ready, video.currentStage, video.errorMessage, video.failedStage, video.status]);
 
   useEffect(() => {
-    setVisibleCount((n) => Math.max(n, Math.min(lines.length, n + 1)));
+    setVisibleCount(lines.length);
   }, [lines.length, video.status]);
-
-  useEffect(() => {
-    if (lines.length > visibleCount) {
-      const t = window.setTimeout(() => setVisibleCount(lines.length), 180);
-      return () => clearTimeout(t);
-    }
-  }, [lines.length, visibleCount]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [visibleCount, video.progress, video.currentStage]);
 
   const shown = lines.slice(0, Math.max(visibleCount, 1));
-  const pct = failed ? video.progress || 0 : video.status === "READY" ? 100 : Math.max(video.progress || 0, 3);
+  const smooth = useSmoothProgress(video.progress || 0, video.status);
+  const pct = failed ? video.progress || 0 : video.status === "READY" && smooth >= 99.5 ? 100 : Math.max(smooth, 1);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-line bg-[#0b0d12]">
       <div className="border-b border-line px-4 py-3">
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium">{failed ? "Stopped" : video.status === "READY" ? "Finished" : "Working on your reel"}</span>
-          <span className="tabular-nums text-muted">{pct}%</span>
+          <span className="tabular-nums text-muted">{formatProgressPct(pct)}</span>
         </div>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
           <div
-            className={`h-full rounded-full transition-all duration-700 ${failed ? "bg-red-400" : "bg-accent"}`}
-            style={{ width: `${pct}%` }}
+            className={`h-full rounded-full ${failed ? "bg-red-400" : "bg-accent"}`}
+            style={{ width: `${Math.min(100, pct)}%` }}
           />
         </div>
         {video.currentStage && video.status !== "READY" && !failed && (

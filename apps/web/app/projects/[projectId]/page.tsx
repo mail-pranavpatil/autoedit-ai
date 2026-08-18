@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { api, formatDuration, mediaUrl, type Project, type Video } from "@/lib/api";
+import { useCallback, useState } from "react";
+import { api, formatDuration, isProcessingStatus, mediaUrl, type Project, type Video } from "@/lib/api";
+import { usePolling } from "@/lib/usePolling";
 import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/common/EmptyState";
@@ -16,18 +17,17 @@ export default function ProjectDetailPage() {
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false);
 
-  async function load() {
-    try {
-      setProject(await api<Project>(`/api/projects/${params.projectId}`));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  useEffect(() => {
-    load();
+  const load = useCallback(async () => {
+    const p = await api<Project>(`/api/projects/${params.projectId}`);
+    setProject(p);
+    setError(null);
   }, [params.projectId]);
 
-  if (error) return <ErrorState message={error} onRetry={load} />;
+  const polling =
+    !project || (project.videos || []).some((v) => isProcessingStatus(v.status)) || project.processingVideos > 0;
+  usePolling(polling, load, 2000);
+
+  if (!project && error) return <ErrorState message={error} onRetry={() => load().catch((e) => setError((e as Error).message))} />;
   if (!project) return <LoadingSkeleton />;
 
   const videos = (project.videos || []).filter((v) => filter === "all" || v.status === filter);

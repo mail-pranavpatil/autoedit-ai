@@ -6,7 +6,6 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from autoedit.edit_schema import POSITION_Y, CaptionStyle
-from autoedit.media import run_ffmpeg
 
 logger = logging.getLogger("autoedit")
 
@@ -264,6 +263,82 @@ def render_blank_png(path: Path) -> None:
     Image.new("RGBA", (CANVAS_W, CANVAS_H), (0, 0, 0, 0)).save(path, "PNG")
 
 
+def render_caption_pngs(
+    phrases: list[dict],
+    out_dir: Path,
+    duration: float,
+    enabled: bool = True,
+    style: CaptionStyle | dict | None = None,
+) -> list[tuple[float, float, str]]:
+    """Write one RGBA PNG per word-highlight state. Used directly as FFmpeg overlays."""
+    if not enabled:
+        return []
+    st = resolve_style(style)
+    states = caption_states(phrases)
+    if not states:
+        return []
+    out_dir.mkdir(parents=True, exist_ok=True)
+    font = find_font(st.font, st.size)
+    duration = max(duration, 0.5)
+    overlays: list[tuple[float, float, str]] = []
+    logger.info(
+        "Caption burn preset=%s size=%s font=%s active=%s bg=%s states=%s",
+        st.preset,
+        st.size,
+        st.font,
+        st.active_color,
+        st.background,
+        len(states),
+    )
+    for i, state in enumerate(states):
+        start = max(0.0, float(state["start"]))
+        end = min(duration, float(state["end"]))
+        if end <= start:
+            continue
+        png = out_dir / f"cap_{i:04d}.png"
+        render_pill_png(png, state["texts"], int(state["active"]), font, st)
+        overlays.append((start, max(end, start + 0.05), str(png)))
+    return overlays
+
+
+def _concat_entry(path: Path) -> str:
+    escaped = str(path.resolve()).replace("'", r"'\''")
+    return f"file '{escaped}'"
+
+
+def write_caption_concat(
+    overlays: list[tuple[float, float, str]],
+    out_dir: Path,
+    duration: float,
+) -> str | None:
+    """One FFmpeg concat list for every caption PNG — avoids 100+ overlay inputs."""
+    if not overlays:
+        return None
+    out_dir.mkdir(parents=True, exist_ok=True)
+    blank = out_dir / "blank.png"
+    render_blank_png(blank)
+    lines = ["ffconcat version 1.0"]
+    t = 0.0
+    duration = max(duration, 0.5)
+    last_png = Path(overlays[-1][2])
+    for start, end, png in overlays:
+        if start > t + 0.02:
+            lines.append(_concat_entry(blank))
+            lines.append(f"duration {start - t:.4f}")
+        lines.append(_concat_entry(Path(png)))
+        lines.append(f"duration {max(end - start, 0.05):.4f}")
+        t = end
+        last_png = Path(png)
+    if t < duration - 0.02:
+        lines.append(_concat_entry(blank))
+        lines.append(f"duration {duration - t:.4f}")
+        last_png = blank
+    lines.append(_concat_entry(last_png))
+    concat = out_dir / "concat.txt"
+    concat.write_text("\n".join(lines) + "\n")
+    return str(concat)
+
+
 def build_caption_overlay_video(
     phrases: list[dict],
     out_dir: Path,
@@ -271,62 +346,5 @@ def build_caption_overlay_video(
     enabled: bool = True,
     style: CaptionStyle | dict | None = None,
 ) -> str | None:
-    if not enabled:
-        return None
-    st = resolve_style(style)
-    states = caption_states(phrases)
-    if not states:
-        return None
-    out_dir.mkdir(parents=True, exist_ok=True)
-    font = find_font(st.font, st.size)
-    blank = out_dir / "blank.png"
-    render_blank_png(blank)
-    files: list[tuple[float, Path]] = []
-    t = 0.0
-    duration = max(duration, 0.5)
-    for i, state in enumerate(states):
-        start = max(0.0, float(state["start"]))
-        end = min(duration, float(state["end"]))
-        if start > t + 0.02:
-            files.append((start - t, blank))
-        png = out_dir / f"cap_{i:04d}.png"
-        render_pill_png(png, state["texts"], int(state["active"]), font, st)
-        files.append((max(end - start, 0.05), png))
-        t = end
-    if t < duration - 0.02:
-        files.append((duration - t, blank))
-    if not files:
-        return None
-    concat = out_dir / "concat.txt"
-    lines = []
-    for dur, png in files:
-        escaped = str(png.resolve()).replace("\\", "\\\\").replace("'", "\\'")
-        lines.append(f"file '{escaped}'")
-        lines.append(f"duration {dur:.4f}")
-    last = files[-1][1]
-    escaped = str(last.resolve()).replace("\\", "\\\\").replace("'", "\\'")
-    lines.append(f"file '{escaped}'")
-    concat.write_text("\n".join(lines) + "\n")
-    overlay = out_dir / "captions.mov"
-    run_ffmpeg(
-        [
-            "ffmpeg",
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat),
-            "-vsync",
-            "vfr",
-            "-c:v",
-            "png",
-            "-pix_fmt",
-            "rgba",
-            "-an",
-            str(overlay),
-        ],
-        timeout=300,
-    )
-    return str(overlay)
+    overlays = render_caption_pngs(phrases, out_dir, duration, enabled, style)
+    return write_caption_concat(overlays, out_dir, duration)

@@ -52,10 +52,10 @@ def process_video_task(self, video_id: str) -> str:
 
 
 @celery_app.task(name="worker.render_video", bind=True, max_retries=0)
-def render_video_task(self, video_id: str) -> str:
+def render_video_task(self, video_id: str, plan_json: dict | None = None) -> str:
     db = SessionLocal()
     try:
-        render_video(db, video_id)
+        render_video(db, video_id, plan_json=plan_json)
         return "ok"
     except Exception:
         logger.exception("render_video_task failed for %s", video_id)

@@ -14,7 +14,7 @@ export function MediaBin({
   musicUrl: string | null;
 }) {
   return (
-    <aside className="flex h-full flex-col border-r border-white/10 bg-[#16181f]">
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden border-r border-white/10 bg-[#16181f]">
       <div className="border-b border-white/10 px-3 py-2 text-xs uppercase tracking-wide text-white/40">Media</div>
       <div className="flex-1 space-y-3 overflow-y-auto p-3">
         <div>

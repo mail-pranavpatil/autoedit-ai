@@ -3,7 +3,7 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { API_URL, type BrollAsset, type CaptionPhrase, type EditSegment } from "@/lib/api";
 import { CaptionPill } from "./CaptionPill";
-import type { CaptionStyle } from "./captionStyle";
+import { pickCaptionPhrase, type CaptionStyle } from "./captionStyle";
 
 export function PreviewStage({
   sourceUrl,
@@ -37,7 +37,7 @@ export function PreviewStage({
   const overlayRef = useRef<HTMLVideoElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const musicRef = useRef<HTMLAudioElement | null>(null);
-  const phrase = captionsEnabled ? phrases.find((p) => time >= p.start && time < p.end) || null : null;
+  const phrase = captionsEnabled ? pickCaptionPhrase(phrases, time) : null;
 
   useEffect(() => {
     const el = mediaRef.current;
@@ -70,7 +70,7 @@ export function PreviewStage({
   }, [activeBroll, playing, time]);
 
   return (
-    <div className="relative mx-auto aspect-[9/16] h-full max-h-full w-auto overflow-hidden rounded-md bg-black shadow-[0_0_0_1px_rgba(255,255,255,0.08)] [container-type:size]">
+    <div className="relative mx-auto aspect-[9/16] h-full max-h-full w-auto overflow-hidden rounded-md bg-black shadow-[0_0_0_1px_rgba(255,255,255,0.08)] [container-type:inline-size]">
       <video
         ref={(n) => {
           mediaRef.current = n;

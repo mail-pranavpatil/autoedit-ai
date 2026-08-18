@@ -16,7 +16,8 @@ Effect = Literal[
     "fade_out",
 ]
 
-SfxName = Literal[
+# Legacy segment.sfx values. New SFX ids live in autoedit.sfx.catalog.json.
+LEGACY_SFX_NAMES = (
     "whoosh",
     "pop",
     "click",
@@ -27,14 +28,18 @@ SfxName = Literal[
     "impact",
     "bubble",
     "cartoon",
-]
+)
+SfxName = str
 
-MusicCategory = Literal["energetic", "technology", "cinematic", "motivational", "chill"]
+MusicCategory = Literal["thank_you", "cornfield_chase", "feeling_blue"]
 Visual = Literal["talking_head", "broll"]
 BrollType = Literal["video", "image"]
+SfxKind = Literal["accent", "transition", "riser", "combo"]
+MAX_VISUAL_ASSETS = 16
+DISALLOWED_QUERY_TOKS = (";", "&&", "|", "`", "$(", "../")
 
 ALLOWED_EFFECTS = set(Effect.__args__)  # type: ignore[attr-defined]
-ALLOWED_SFX = set(SfxName.__args__)  # type: ignore[attr-defined]
+ALLOWED_SFX = set(LEGACY_SFX_NAMES)
 ALLOWED_MUSIC = set(MusicCategory.__args__)  # type: ignore[attr-defined]
 
 
@@ -45,7 +50,7 @@ class EditSegment(BaseModel):
     broll_query: str | None = None
     broll_type: BrollType | None = None
     effect: Effect = "none"
-    sfx: SfxName | None = None
+    sfx: str | None = None
 
     @field_validator("broll_query", "broll_type", "sfx", mode="before")
     @classmethod
@@ -94,6 +99,25 @@ class CaptionPhrase(BaseModel):
     start: float
     end: float
     words: list[CaptionWord] = Field(min_length=1)
+
+
+class SfxEvent(BaseModel):
+    sfx_id: str
+    start: float
+    volume: float = 0.18
+    kind: SfxKind = "accent"
+    reason: str = ""
+    confidence: float = 0.0
+    duck_music: bool = False
+
+
+class SfxDecision(BaseModel):
+    time: float
+    accepted: bool
+    sfx_id: str | None = None
+    reason: str
+    score: float | None = None
+    event_type: str | None = None
 
 
 CaptionPreset = Literal["classic", "hormozi", "bold", "minimal", "neon", "subtitle"]
@@ -224,7 +248,7 @@ class CaptionStyle(BaseModel):
     font: CaptionFont = "serif"
     size: int = Field(default=54, ge=24, le=96)
     position: CaptionPosition = "lower"
-    y_percent: float | None = Field(default=None, ge=5, le=92)
+    y_percent: float | None = None
     active_color: str = "#FFFFFF"
     muted_color: str = "#B8B8B8"
     background: CaptionBackground = "pill"
@@ -242,6 +266,13 @@ class CaptionStyle(BaseModel):
     @classmethod
     def valid_hex(cls, v: str) -> str:
         return _hex_color(v)
+
+    @field_validator("y_percent")
+    @classmethod
+    def valid_y(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        return min(92.0, max(5.0, float(v)))
 
 
 def caption_style_from_preset(name: str) -> CaptionStyle:
@@ -261,6 +292,15 @@ class EditPlan(BaseModel):
     music_volume: float | None = None
     caption_phrases: list[CaptionPhrase] | None = None
     caption_style: CaptionStyle = Field(default_factory=CaptionStyle)
+    sfx_events: list[SfxEvent] = Field(default_factory=list)
+    sfx_log: list[SfxDecision] = Field(default_factory=list)
+
+    @field_validator("music_category", mode="before")
+    @classmethod
+    def coerce_music_category(cls, value):
+        from autoedit.music import coerce_music_id
+
+        return coerce_music_id(str(value) if value is not None else "")
 
     @field_validator("segments")
     @classmethod
@@ -268,12 +308,21 @@ class EditPlan(BaseModel):
         for seg in segments:
             if seg.broll_query:
                 lowered = seg.broll_query.lower()
-                if any(tok in lowered for tok in [";", "&&", "|", "`", "$(", "../"]):
+                if any(tok in lowered for tok in DISALLOWED_QUERY_TOKS):
                     raise ValueError("broll_query contains disallowed characters")
         return segments
 
 
+def plan_duration(plan: EditPlan) -> float:
+    if not plan.segments:
+        return 0.0
+    return max(s.end for s in plan.segments)
+
+
 def plan_is_weak(plan: EditPlan) -> bool:
+    duration = plan_duration(plan)
+    if duration < 6:
+        return False
     broll = sum(1 for s in plan.segments if s.visual == "broll")
     return broll < 2
 
@@ -284,18 +333,76 @@ DEFAULT_STYLE_PROFILE = {
     "fps": 30,
     "broll_frequency": "medium",
     "broll_type": "both",
+    "visual_cadence_seconds": 2.5,
     "effects": {
         "zoom": True,
         "pan": True,
         "fade": True,
     },
-    "sfx_enabled": ["whoosh", "pop", "click", "camera_shutter"],
-    "music_categories": ["energetic", "technology", "cinematic", "motivational", "chill"],
+    "sfx_enabled": [
+        "ui_text_accent",
+        "text_reveal",
+        "comedy",
+        "pattern_interrupt",
+        "camera",
+        "fast_transition",
+        "transition",
+        "directional_motion",
+        "buildup",
+    ],
+    "music_categories": ["thank_you", "cornfield_chase", "feeling_blue"],
     "music_volume": 0.18,
-    "sfx_volume": 0.28,
+    "sfx_volume": 0.32,
     "voice_volume": 1.0,
     "captions_enabled": True,
+    "sfx_debug": False,
+    "preferred_music_category": None,
+    "caption_style": caption_style_from_preset("classic").model_dump(mode="json"),
 }
+
+
+def merge_style_profile(raw: dict | None) -> dict:
+    incoming = dict(raw or {})
+    merged = {**DEFAULT_STYLE_PROFILE, **incoming}
+    effects = {**(DEFAULT_STYLE_PROFILE.get("effects") or {}), **(incoming.get("effects") or {})}
+    merged["effects"] = effects
+    cap_in = incoming.get("caption_style") if isinstance(incoming.get("caption_style"), dict) else {}
+    preset = str((cap_in or {}).get("preset") or "classic")
+    try:
+        cap = CaptionStyle.model_validate({**caption_style_from_preset(preset).model_dump(), **(cap_in or {})})
+    except Exception:
+        cap = caption_style_from_preset(preset)
+    merged["caption_style"] = cap.model_dump(mode="json")
+    wpl = incoming.get("words_per_line")
+    if wpl is not None:
+        merged["caption_style"]["words_per_line"] = max(2, min(8, int(wpl)))
+    pref = merged.get("preferred_music_category")
+    if pref in {"", "auto", "none", None}:
+        merged["preferred_music_category"] = None
+    else:
+        from autoedit.music import coerce_music_id, MUSIC_IDS
+
+        mapped = coerce_music_id(str(pref))
+        merged["preferred_music_category"] = mapped if mapped in MUSIC_IDS else None
+    try:
+        merged["visual_cadence_seconds"] = min(4.0, max(1.6, float(merged.get("visual_cadence_seconds") or 2.5)))
+    except (TypeError, ValueError):
+        merged["visual_cadence_seconds"] = 2.5
+    return merged
+
+
+def apply_style_defaults(plan: EditPlan, style: dict | None) -> EditPlan:
+    profile = merge_style_profile(style)
+    cap = CaptionStyle.model_validate(profile.get("caption_style") or {})
+    updates: dict = {
+        "caption_style": cap,
+        "captions_enabled": bool(profile.get("captions_enabled", True)),
+        "music_volume": float(profile.get("music_volume", 0.18)),
+    }
+    preferred = profile.get("preferred_music_category")
+    if preferred in ALLOWED_MUSIC:
+        updates["music_category"] = preferred
+    return plan.model_copy(update=updates)
 
 
 STAGE_PROGRESS = {

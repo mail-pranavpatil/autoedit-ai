@@ -3,11 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from autoedit.auth import get_current_user
 from autoedit.config import get_settings
 from autoedit.db import get_db
-from autoedit.edit_schema import DEFAULT_STYLE_PROFILE
+from autoedit.edit_schema import merge_style_profile
 from autoedit.models import DriveConnection, StyleProfile, User
 
 router = APIRouter(prefix="/api", tags=["settings"])
@@ -20,20 +21,22 @@ class StyleBody(BaseModel):
 @router.get("/style")
 def get_style(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     row = db.query(StyleProfile).filter(StyleProfile.user_id == user.id).first()
-    return {**DEFAULT_STYLE_PROFILE, **(row.profile_json if row else {})}
+    return merge_style_profile(row.profile_json if row else None)
 
 
 @router.put("/style")
 def put_style(body: StyleBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     row = db.query(StyleProfile).filter(StyleProfile.user_id == user.id).first()
-    merged = {**DEFAULT_STYLE_PROFILE, **(body.profile or {})}
+    merged = merge_style_profile(body.profile or {})
     if not row:
         row = StyleProfile(user_id=user.id, profile_json=merged)
         db.add(row)
     else:
         row.profile_json = merged
+        flag_modified(row, "profile_json")
     db.commit()
-    return merged
+    db.refresh(row)
+    return merge_style_profile(row.profile_json)
 
 
 @router.get("/settings")

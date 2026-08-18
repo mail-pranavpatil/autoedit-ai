@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+
 import httpx
 from openai import OpenAI
 
 from autoedit.config import get_settings
-from autoedit.edit_schema import DEFAULT_STYLE_PROFILE, EditPlan
+from autoedit.edit_schema import EditPlan, merge_style_profile
 
 logger = logging.getLogger("autoedit")
 
@@ -98,21 +99,58 @@ class OpenAILLM(LLMProvider):
     def plan_edit(self, transcript: dict, duration: float, metadata: dict, style: dict) -> dict:
         settings = get_settings()
         client = OpenAI(api_key=settings.openai_api_key)
-        style = {**DEFAULT_STYLE_PROFILE, **(style or {})}
+        style = merge_style_profile(style)
+        cap = style.get("caption_style") or {}
+        freq = str(style.get("broll_frequency") or "medium")
+        cadence = {"high": 2.0, "low": 3.5}.get(freq, 2.5)
+        try:
+            cadence = float(style.get("visual_cadence_seconds") or cadence)
+        except (TypeError, ValueError):
+            pass
+        cadence = min(4.0, max(1.6, cadence))
+        broll_n = max(2, int(duration // cadence))
+        preferred = style.get("preferred_music_category")
+        if preferred:
+            preferred_music = f"User pinned track: {preferred}. Set music_category to {preferred}."
+        else:
+            preferred_music = (
+                "Choose exactly one of thank_you | cornfield_chase | feeling_blue using emotion, "
+                "story arc, pacing, and ending — not topic. thank_you = gratitude/milestone/warm payoff. "
+                "cornfield_chase = cinematic stakes/reveal only (never just because the topic is AI). "
+                "feeling_blue = calm, reflective, educational, general-purpose default. "
+                "One track for the whole reel."
+            )
+        effects = style.get("effects") or {}
+        allowed_fx = []
+        if effects.get("zoom", True):
+            allowed_fx += ["slow_zoom_in", "slow_zoom_out"]
+        if effects.get("pan", True):
+            allowed_fx += ["pan_left", "pan_right", "pan_up", "pan_down"]
+        if effects.get("fade", True):
+            allowed_fx += ["fade_in", "fade_out"]
+        if not allowed_fx:
+            allowed_fx = ["none"]
+        broll_type_pref = style.get("broll_type") or "both"
+        if broll_type_pref == "images":
+            broll_type_rule = 'For broll segments set broll_type to "image".'
+        elif broll_type_pref == "video":
+            broll_type_rule = 'For broll segments set broll_type to "video".'
+        else:
+            broll_type_rule = 'For broll segments set broll_type to "video" (preferred) or "image", never null.'
         prompt = f"""You are an edit planner for vertical talking-head social videos.
 Return ONLY JSON matching the EditPlan schema. Never include shell commands, URLs, file paths, or credentials.
 
 CRITICAL JSON RULES:
 - Use JSON null, never the string "null".
 - For talking_head segments set broll_query and broll_type to null (JSON null).
-- For broll segments set broll_type to "video" (preferred) or "image", never null.
-- sfx must be a name from the enum or JSON null, never the string "null".
+- {broll_type_rule}
+- sfx on segments must be JSON null. Sound design is applied later by the SFX engine, not this plan.
 
 JSON shape:
 {{
   "video_summary": "string",
   "tone": "string",
-  "music_category": "energetic|technology|cinematic|motivational|chill",
+  "music_category": "thank_you|cornfield_chase|feeling_blue",
   "segments": [
     {{
       "start": 0,
@@ -130,18 +168,23 @@ JSON shape:
       "broll_query": "ancient indian scriptures book",
       "broll_type": "video",
       "effect": "fade_in",
-      "sfx": "whoosh"
+      "sfx": null
     }}
   ]
 }}
 
+USER STYLE DEFAULTS (follow these for every edit):
+- Visual cadence: about every {cadence:.1f}s ({freq}). Include about {broll_n} full-screen broll cuts of 2–3 seconds each in a {duration:.0f}s video. Alternate ~2–3s talking_head and ~2–3s broll. Leave talking-head beats for product/screenshot overlay cards. Do not leave talking-head uncovered for more than 3 seconds.
+- Preferred music category: {preferred_music}.
+- Allowed motion effects: {", ".join(allowed_fx)}. Do not use others.
+- Captions: {"on" if style.get("captions_enabled", True) else "off"}; words per line = {cap.get("words_per_line", 5)}; preset = {cap.get("preset", "classic")}.
+
 Editing rules (the finished video must NOT look like the raw clip):
-- Alternate talking_head and broll. For a {duration:.0f}s video, include at least {max(2, int(duration // 6))} broll segments of 2.5–5 seconds each.
-- Do not cover the entire video with B-roll. Keep the speaker visible often.
-- Talking-head segments should use slow_zoom_in or slow_zoom_out, not "none".
-- Put a whoosh or pop sfx at most B-roll starts.
+- Alternate talking_head and broll on a 2–3 second rhythm.
+- Keep at least 1.2s of talking-head between full-screen B-roll cuts.
+- Talking-head segments should use slow_zoom_in or slow_zoom_out when zoom is allowed, not "none".
+- Do not assign sound effects. Leave every segment sfx as JSON null.
 - B-roll queries must be short stock-search phrases like "india temple" or "person journaling".
-- Music category from the enum, matching tone.
 - Segments must cover 0 to {duration:.2f} without overlapping.
 
 Duration seconds: {duration}

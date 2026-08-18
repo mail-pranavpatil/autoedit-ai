@@ -31,13 +31,24 @@ app.add_middleware(
 _rate: dict[str, list[float]] = defaultdict(list)
 
 
+def _skip_rate_limit(path: str) -> bool:
+    if not path.startswith("/api/"):
+        return True
+    if path.startswith("/api/media/") or path.startswith("/api/health"):
+        return True
+    if path.endswith("/stream") or path.endswith("/download") or path.endswith("/preview"):
+        return True
+    return False
+
+
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
-    if request.url.path.startswith("/api/"):
+    path = request.url.path
+    if not _skip_rate_limit(path):
         ip = request.client.host if request.client else "unknown"
         now = time.time()
         window = [t for t in _rate[ip] if now - t < 60]
-        if len(window) > 120:
+        if len(window) > 400:
             return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
         window.append(now)
         _rate[ip] = window

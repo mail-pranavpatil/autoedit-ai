@@ -9,7 +9,7 @@
     "tone": { "type": "string" },
     "music_category": {
       "type": "string",
-      "enum": ["energetic", "technology", "cinematic", "motivational", "chill"]
+      "enum": ["thank_you", "cornfield_chase", "feeling_blue"]
     },
     "segments": {
       "type": "array",

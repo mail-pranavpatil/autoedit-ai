@@ -1,61 +1,111 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from sqlalchemy.orm import Session
 
 from autoedit.config import get_settings
 from autoedit.models import LibraryAsset
-from autoedit.tones import write_tone
+from autoedit.edit_schema import LEGACY_SFX_NAMES
+from autoedit.music import TRACKS
+from autoedit.sfx.registry import load_catalog, resolve_sfx_path
 
-SFX_NAMES = [
-    "whoosh",
-    "pop",
-    "click",
-    "camera_shutter",
-    "notification",
-    "ding",
-    "swipe",
-    "impact",
-    "bubble",
-    "cartoon",
-]
+SFX_NAMES = list(LEGACY_SFX_NAMES)
 
-MUSIC_CATEGORIES = ["energetic", "technology", "cinematic", "motivational", "chill"]
+OLD_MUSIC_FILES = (
+    "energetic.wav",
+    "technology.wav",
+    "cinematic.wav",
+    "motivational.wav",
+    "chill.wav",
+)
+OLD_MUSIC_NAMES = ("energetic", "technology", "cinematic", "motivational", "chill")
 
 
 def seed_system_assets(db: Session) -> None:
     assets_dir = get_settings().assets_dir
-    existing = {a.name for a in db.query(LibraryAsset).filter(LibraryAsset.is_system.is_(True)).all()}
-    freqs = [180, 420, 880, 1200, 980, 660, 240, 90, 1500, 330]
-    for name, freq in zip(SFX_NAMES, freqs):
-        path = assets_dir / "sfx" / f"{name}.wav"
-        if not path.exists():
-            write_tone(path, freq, 0.35, volume=0.35)
-        if name not in existing:
-            db.add(
-                LibraryAsset(
-                    user_id=None,
-                    name=name,
-                    asset_type="sfx",
-                    category="system",
-                    local_path=str(path.resolve()),
-                    enabled=True,
-                    is_system=True,
-                )
+    rows = db.query(LibraryAsset).filter(LibraryAsset.is_system.is_(True)).all()
+    existing = {a.name: a for a in rows}
+
+    for name in LEGACY_SFX_NAMES:
+        row = existing.pop(name, None)
+        if row and row.asset_type == "sfx":
+            legacy_path = Path(row.local_path)
+            db.delete(row)
+            if legacy_path.exists() and legacy_path.parent == (assets_dir / "sfx").resolve():
+                legacy_path.unlink(missing_ok=True)
+        else:
+            leftover = assets_dir / "sfx" / f"{name}.wav"
+            leftover.unlink(missing_ok=True)
+
+    for item in load_catalog():
+        path = resolve_sfx_path(item, sfx_dir=assets_dir / "sfx")
+        if not path:
+            continue
+        row = existing.get(item.id)
+        if row:
+            row.local_path = str(path.resolve())
+            row.category = item.category
+            row.enabled = True
+            row.asset_type = "sfx"
+            continue
+        db.add(
+            LibraryAsset(
+                user_id=None,
+                name=item.id,
+                asset_type="sfx",
+                category=item.category,
+                local_path=str(path.resolve()),
+                enabled=True,
+                is_system=True,
             )
-    for i, cat in enumerate(MUSIC_CATEGORIES):
-        path = assets_dir / "music" / f"{cat}.wav"
+        )
+
+    music_dir = assets_dir / "music"
+    for old_name in OLD_MUSIC_NAMES:
+        row = existing.pop(old_name, None)
+        if row and row.asset_type == "music":
+            db.delete(row)
+    for filename in OLD_MUSIC_FILES:
+        (music_dir / filename).unlink(missing_ok=True)
+
+    keep_names = {track.id for track in TRACKS}
+    keep_files = {track.file for track in TRACKS}
+    for row in list(existing.values()):
+        if row.asset_type == "music" and row.name not in keep_names:
+            db.delete(row)
+            existing.pop(row.name, None)
+
+    if music_dir.exists():
+        for path in music_dir.iterdir():
+            if not path.is_file():
+                continue
+            if path.name in {".gitkeep", "background_music_decision_engine.md"}:
+                continue
+            if path.name not in keep_files:
+                path.unlink(missing_ok=True)
+
+    for track in TRACKS:
+        path = music_dir / track.file
         if not path.exists():
-            write_tone(path, 110 + i * 20, 8.0, volume=0.12)
-        if cat not in existing:
-            db.add(
-                LibraryAsset(
-                    user_id=None,
-                    name=cat,
-                    asset_type="music",
-                    category=cat,
-                    local_path=str(path.resolve()),
-                    enabled=True,
-                    is_system=True,
-                )
+            continue
+        row = existing.get(track.id)
+        if row:
+            row.local_path = str(path.resolve())
+            row.category = track.id
+            row.enabled = True
+            row.asset_type = "music"
+            row.name = track.id
+            continue
+        db.add(
+            LibraryAsset(
+                user_id=None,
+                name=track.id,
+                asset_type="music",
+                category=track.id,
+                local_path=str(path.resolve()),
+                enabled=True,
+                is_system=True,
             )
+        )
     db.commit()

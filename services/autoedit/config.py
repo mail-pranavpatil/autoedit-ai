@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
 
@@ -29,6 +31,8 @@ class Settings(BaseSettings):
 
     storage_dir: Path = Path("./storage")
     assets_dir: Path = Path("./assets")
+    sfx_debug: bool = False
+    sfx_allow_unverified_licenses: bool | None = None
 
 
 @lru_cache

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from autoedit.pipeline import pick_music
 from api.routes.projects import serialize_video
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
+logger = logging.getLogger("autoedit")
 
 
 def _owned_video(db: Session, user: User, video_id: uuid.UUID) -> Video:
@@ -103,7 +105,12 @@ def download_video(video_id: uuid.UUID, user: User = Depends(get_current_user), 
     )
     if not job or not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(404, "Rendered file not ready")
-    return FileResponse(job.output_path, media_type="video/mp4", filename=f"{Path(video.filename).stem}-autoedit.mp4")
+    return FileResponse(
+        job.output_path,
+        media_type="video/mp4",
+        filename=f"{Path(video.filename).stem}-autoedit.mp4",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
 
 
 @router.get("/{video_id}/stream")
@@ -117,7 +124,11 @@ def stream_video(video_id: uuid.UUID, user: User = Depends(get_current_user), db
     )
     if not job or not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(404, "No output to preview")
-    return FileResponse(job.output_path, media_type="video/mp4")
+    return FileResponse(
+        job.output_path,
+        media_type="video/mp4",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
 
 
 def _latest_plan(db: Session, video_id: uuid.UUID) -> EditPlan | None:
@@ -162,9 +173,10 @@ def get_editor(video_id: uuid.UUID, user: User = Depends(get_current_user), db: 
     phrases = phrases_from_plan_or_transcript(
         [p.model_dump() for p in parsed.caption_phrases] if parsed and parsed.caption_phrases else None,
         segments if isinstance(segments, list) else None,
+        words_per_line=parsed.caption_style.words_per_line if parsed and parsed.caption_style else None,
     )
     job = db.query(RenderJob).filter(RenderJob.video_id == video.id).order_by(RenderJob.created_at.desc()).first()
-    music = pick_music(db, parsed.music_category if parsed else "technology", user.id)
+    music = pick_music(db, parsed.music_category if parsed else "feeling_blue", user.id)
     data = serialize_video(video)
     data["projectId"] = str(video.project_id)
     data["editPlan"] = parsed.model_dump() if parsed else None
@@ -204,7 +216,7 @@ def stream_source(video_id: uuid.UUID, user: User = Depends(get_current_user), d
 def stream_music(video_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     video = _owned_video(db, user, video_id)
     plan_row = _latest_plan(db, video.id)
-    category = "technology"
+    category = "feeling_blue"
     if plan_row:
         category = (plan_row.plan_json or {}).get("music_category") or category
     music = pick_music(db, category, user.id)
@@ -242,23 +254,45 @@ def save_edit_plan(
     parsed = EditPlanSchema.model_validate(body.plan)
     latest = _latest_plan(db, video.id)
     version = (latest.version + 1) if latest else 1
-    row = EditPlan(video_id=video.id, version=version, plan_json=parsed.model_dump())
+    dumped = parsed.model_dump(mode="json")
+    row = EditPlan(video_id=video.id, version=version, plan_json=dumped)
     db.add(row)
     db.commit()
-    return {"ok": True, "version": version, "editPlan": parsed.model_dump()}
+    logger.info("Saved edit plan v%s caption_style=%s", version, dumped.get("caption_style", {}).get("preset"))
+    return {"ok": True, "version": version, "editPlan": dumped}
+
+
+class RenderBody(BaseModel):
+    plan: dict
 
 
 @router.post("/{video_id}/render")
-def render_from_editor(video_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def render_from_editor(
+    video_id: uuid.UUID,
+    body: RenderBody,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     from worker.tasks import render_video_task
 
     video = _owned_video(db, user, video_id)
     if not video.local_path:
         raise HTTPException(400, "Source missing; process the video first")
+    parsed = EditPlanSchema.model_validate(body.plan)
+    dumped = parsed.model_dump(mode="json")
+    latest = _latest_plan(db, video.id)
+    version = (latest.version + 1) if latest else 1
+    db.add(EditPlan(video_id=video.id, version=version, plan_json=dumped))
     video.status = "QUEUED"
     video.current_stage = "Queued render"
     video.progress = 1
     video.updated_at = datetime.utcnow()
     db.commit()
-    render_video_task.delay(str(video.id))
+    logger.info(
+        "Queue render %s plan v%s caption_style=%s",
+        video.id,
+        version,
+        dumped.get("caption_style", {}).get("preset"),
+    )
+    render_video_task.delay(str(video.id), plan_json=dumped)
     return serialize_video(video)

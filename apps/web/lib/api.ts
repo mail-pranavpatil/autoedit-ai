@@ -14,6 +14,12 @@ export type Project = {
   active?: boolean;
 };
 
+export const TERMINAL_VIDEO_STATUSES = ["READY", "FAILED", "DISCOVERED"] as const;
+
+export function isProcessingStatus(status?: string | null) {
+  return Boolean(status) && !TERMINAL_VIDEO_STATUSES.includes(status as (typeof TERMINAL_VIDEO_STATUSES)[number]);
+}
+
 export type Video = {
   id: string;
   filename: string;
@@ -66,6 +72,16 @@ export type EditSegment = {
   sfx: string | null;
 };
 
+export type SfxEvent = {
+  sfx_id: string;
+  start: number;
+  volume: number;
+  kind: string;
+  reason: string;
+  confidence: number;
+  duck_music: boolean;
+};
+
 export type EditPlan = {
   video_summary: string;
   tone: string;
@@ -75,6 +91,7 @@ export type EditPlan = {
   music_volume?: number | null;
   caption_phrases?: CaptionPhrase[] | null;
   caption_style?: CaptionStyle | null;
+  sfx_events?: SfxEvent[];
 };
 
 export type BrollAsset = {

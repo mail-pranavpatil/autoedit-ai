@@ -132,14 +132,40 @@ export const CAPTION_PRESETS: Record<CaptionStyle["preset"], Omit<CaptionStyle, 
 
 export const DEFAULT_CAPTION_STYLE: CaptionStyle = { preset: "classic", ...CAPTION_PRESETS.classic };
 
-export function applyCaptionPreset(name: CaptionStyle["preset"]): CaptionStyle {
-  return { preset: name, ...CAPTION_PRESETS[name], y_percent: null };
-}
-
 export function normalizeCaptionStyle(raw?: Partial<CaptionStyle> | null): CaptionStyle {
   return { ...DEFAULT_CAPTION_STYLE, ...(raw || {}) };
 }
 
+export function applyCaptionPreset(name: CaptionStyle["preset"]): CaptionStyle {
+  return { preset: name, ...CAPTION_PRESETS[name], y_percent: null };
+}
+
+export function serializeCaptionStyle(raw?: Partial<CaptionStyle> | null): CaptionStyle {
+  const style = normalizeCaptionStyle(raw);
+  if (style.y_percent == null) {
+    const { y_percent: _ignored, ...rest } = style;
+    return rest as CaptionStyle;
+  }
+  return style;
+}
+
 export function captionY(style: CaptionStyle) {
   return style.y_percent ?? POSITION_Y[style.position] ?? 62;
+}
+
+export function toColorInput(hex: string | undefined, fallback = "#ffffff") {
+  const v = (hex || fallback).trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`.toLowerCase();
+  }
+  return fallback;
+}
+
+export function pickCaptionPhrase<T extends { start: number; end: number }>(phrases: T[], time: number): T | null {
+  if (!phrases.length) return null;
+  const current = phrases.find((p) => time >= p.start && time < p.end);
+  if (current) return current;
+  const upcoming = phrases.find((p) => p.start > time);
+  return upcoming || phrases[phrases.length - 1];
 }

@@ -112,6 +112,40 @@ def test_accepts_string_null_fields():
     assert plan.segments[1].broll_type == "video"
 
 
+def test_accepts_sfx_events_on_plan():
+    plan = EditPlan.model_validate(
+        {
+            "video_summary": "x",
+            "tone": "x",
+            "music_category": "chill",
+            "segments": [
+                {
+                    "start": 0,
+                    "end": 3,
+                    "visual": "talking_head",
+                    "broll_query": None,
+                    "broll_type": None,
+                    "effect": "none",
+                    "sfx": "whoosh",
+                }
+            ],
+            "sfx_events": [
+                {
+                    "sfx_id": "mixkit_camera_shutter",
+                    "start": 1.2,
+                    "volume": 0.16,
+                    "kind": "accent",
+                    "reason": "photo",
+                    "confidence": 0.9,
+                    "duck_music": False,
+                }
+            ],
+        }
+    )
+    assert plan.segments[0].sfx == "whoosh"
+    assert plan.sfx_events[0].sfx_id == "mixkit_camera_shutter"
+
+
 def test_stage_progress_ready():
     assert STAGE_PROGRESS["READY"] == 100
     assert STAGE_PROGRESS["RENDERING"] == 95
