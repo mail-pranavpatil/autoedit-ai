@@ -12,6 +12,9 @@ export default function LoginPage() {
           Sign in with Google. The same account connects Drive so you can import a folder of talking-head clips and get
           finished 9:16 reels.
         </p>
+        <div style={{margin:'12px 0', color: '#ff4a4a', fontFamily: 'monospace', fontSize:'small'}}>
+          API_URL at runtime: <span id="api-url-val">{API_URL}</span>
+        </div>
         <Button className="mt-8 w-full" onClick={() => (window.location.href = `${API_URL}/api/auth/google`)}>
           Continue with Google
         </Button>
