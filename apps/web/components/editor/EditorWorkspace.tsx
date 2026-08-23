@@ -84,7 +84,7 @@ export function EditorWorkspace({ projectId, videoId }: { projectId: string; vid
         method: "POST",
         body: JSON.stringify({ plan: withCaptions }),
       });
-      setData((d) => (d ? { ...d, ...next } : d));
+      setData((d) => (d ? { ...d, ...next, editPlan: (next.editPlan && 'video_summary' in next.editPlan) ? next.editPlan as EditPlan : null } : d));
       toast("Export started — captions will be burned into the MP4");
     } catch (e) {
       toast((e as Error).message, "err");

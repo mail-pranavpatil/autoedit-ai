@@ -30,6 +30,10 @@ export default function VideoDetailPage() {
   const showConsole = processing || video.status === "READY" || video.status === "FAILED";
 
   async function startProcess() {
+    if (!video) {
+      toast("No video loaded to process.", "err");
+      return;
+    }
     setStarting(true);
     try {
       const next = await api<Video>(`/api/videos/${video.id}/process`, { method: "POST" });

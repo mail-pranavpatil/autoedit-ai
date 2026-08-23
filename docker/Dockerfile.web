@@ -5,4 +5,6 @@ COPY apps/web/package.json /app/
 RUN npm install
 COPY apps/web /app
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+RUN npm run build
+
+CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
