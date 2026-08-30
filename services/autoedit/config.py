@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     sfx_debug: bool = False
     sfx_allow_unverified_licenses: bool | None = None
 
+    # Final render is a single huge filter_complex with ~10 concurrent video
+    # decoders. Default frame-threaded decoding allocates threads x ref-frames of
+    # full-res buffers per decoder, which OOM-kills memory-capped containers
+    # (SIGKILL 9). Cap decoder / filtergraph / encoder threads to keep peak RAM
+    # bounded. Raise this on hosts with plenty of memory to speed rendering up.
+    render_ffmpeg_threads: int = 1
+
 
 @lru_cache
 def get_settings() -> Settings:

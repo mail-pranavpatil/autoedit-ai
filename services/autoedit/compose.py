@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from autoedit.config import get_settings
 from autoedit.edit_schema import DEFAULT_STYLE_PROFILE, EditPlan, MAX_VISUAL_ASSETS
 from autoedit.media import run_ffmpeg
 
@@ -76,7 +77,13 @@ def compose_final(
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     duration = max(duration, 0.5)
 
-    inputs: list[str] = ["ffmpeg", "-y", "-i", source]
+    # Bound peak RAM: one decoder thread per input and one filtergraph thread so
+    # frame-buffer pools don't multiply across ~10 concurrent decoders and blow
+    # the container's memory limit (OOM -> SIGKILL 9). See render_ffmpeg_threads.
+    threads = max(1, int(get_settings().render_ffmpeg_threads))
+    thr = ["-threads", str(threads)]
+
+    inputs: list[str] = ["ffmpeg", "-y", "-filter_complex_threads", str(threads), *thr, "-i", source]
     input_index = 1
     broll_labels: list[tuple[int, float, float, str]] = []
 
@@ -84,16 +91,16 @@ def compose_final(
         safe = _safe_path(path, roots + [Path(path).resolve().parent])
         seg_dur = max(0.6, end - start)
         if asset_type == "image":
-            inputs += ["-loop", "1", "-framerate", "30", "-t", f"{seg_dur:.3f}", "-i", safe]
+            inputs += ["-loop", "1", "-framerate", "30", "-t", f"{seg_dur:.3f}", *thr, "-i", safe]
         else:
-            inputs += ["-stream_loop", "-1", "-t", f"{seg_dur:.3f}", "-i", safe]
+            inputs += ["-stream_loop", "-1", "-t", f"{seg_dur:.3f}", *thr, "-i", safe]
         broll_labels.append((input_index, start, end, asset_type))
         input_index += 1
 
     music_idx = None
     if music_path:
         music_idx = input_index
-        inputs += ["-stream_loop", "-1", "-i", _safe_path(music_path, roots + [Path(music_path).resolve().parent])]
+        inputs += ["-stream_loop", "-1", *thr, "-i", _safe_path(music_path, roots + [Path(music_path).resolve().parent])]
         input_index += 1
 
     sfx_indices: list[tuple[int, float, float]] = []
@@ -103,7 +110,7 @@ def compose_final(
         sfx_indices.append((input_index, start, volume if volume is not None else default_sfx_vol))
         if duck:
             duck_times.append(start)
-        inputs += ["-i", _safe_path(path, roots + [Path(path).resolve().parent])]
+        inputs += [*thr, "-i", _safe_path(path, roots + [Path(path).resolve().parent])]
         input_index += 1
 
     cap_video_idx = None
@@ -119,18 +126,18 @@ def compose_final(
 
     if captions_on and caption_video_path:
         cap_video_idx = input_index
-        inputs += ["-i", _safe_path(caption_video_path, roots + [Path(caption_video_path).resolve().parent])]
+        inputs += [*thr, "-i", _safe_path(caption_video_path, roots + [Path(caption_video_path).resolve().parent])]
         input_index += 1
     elif captions_on and packed_concat:
         cap_video_idx = input_index
         concat_safe = _safe_path(packed_concat, roots + [Path(packed_concat).resolve().parent])
-        inputs += ["-f", "concat", "-safe", "0", "-i", concat_safe]
+        inputs += ["-f", "concat", "-safe", "0", *thr, "-i", concat_safe]
         input_index += 1
     elif captions_on:
         for start, end, path in overlays:
             safe = _safe_path(path, roots + [Path(path).resolve().parent])
             seg_dur = max(0.05, end - start)
-            inputs += ["-loop", "1", "-framerate", "30", "-t", f"{seg_dur:.3f}", "-i", safe]
+            inputs += ["-loop", "1", "-framerate", "30", "-t", f"{seg_dur:.3f}", *thr, "-i", safe]
             cap_labels.append((input_index, start, end))
             input_index += 1
 
@@ -225,6 +232,8 @@ def compose_final(
         "libx264",
         "-preset",
         "veryfast",
+        "-threads",
+        str(threads),
         "-pix_fmt",
         "yuv420p",
         "-r",
@@ -233,6 +242,8 @@ def compose_final(
         "aac",
         "-b:a",
         "192k",
+        "-max_muxing_queue_size",
+        "1024",
         "-movflags",
         "+faststart",
         out,

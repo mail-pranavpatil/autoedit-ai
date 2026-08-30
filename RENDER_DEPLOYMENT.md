@@ -55,6 +55,7 @@ See `.env.example` for a full, annotated list.
 
 - All secrets and connection strings coming from Render, not source code!
 - Ensure API/worker images can reach ffmpeg in their environment (installed in Dockerfiles).
+- `RENDER_FFMPEG_THREADS` (default `1`) caps ffmpeg decoder/filter/encoder threads on the worker. The final render is one large `filter_complex` with ~10 concurrent video decoders; leaving threads uncapped OOM-kills small instances (job fails with `ffmpeg ... died with <Signals.SIGKILL: 9>`). Raise to `2`–`4` only on worker plans with several GB of RAM.
 - Local Docker Compose continues to work for development/testing.
 - Object storage is required for durable result delivery.
 - Never use Docker-specific hostnames in Render env; always use full URLs from providers.
