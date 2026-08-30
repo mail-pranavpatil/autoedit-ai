@@ -23,6 +23,7 @@ from autoedit.edit_schema import (
     merge_style_profile,
     plan_is_weak,
 )
+from autoedit.image_ranking import rank_candidates
 from autoedit.mentions import enforce_visual_cadence
 from autoedit.music import MUSIC_IDS, choose_track
 from autoedit.media import (
@@ -459,7 +460,8 @@ def _collect_broll(
     searcher = get_search_provider()
     broll_paths: list[tuple[float, float, str, str]] = []
 
-    for seg in plan.segments:
+    rerank_images = bool(settings.enable_jina_reranker)
+    for idx, seg in enumerate(plan.segments):
         if seg.visual != "broll" or not seg.broll_query:
             continue
         if len(broll_paths) >= MAX_VISUAL_ASSETS:
@@ -471,20 +473,34 @@ def _collect_broll(
         asset_type = want
         source_url = None
         external_id = None
+        pick_meta = None
         if cached and cached.local_path and Path(cached.local_path).exists():
             local = cached.local_path
             asset_type = (cached.payload_json or {}).get("asset_type", want)
+            pick_meta = (cached.payload_json or {}).get("metadata")
         else:
-            results = searcher.search(seg.broll_query, want, "portrait")
+            img_limit = settings.jina_max_candidates if rerank_images else None
+            results = searcher.search(
+                seg.broll_query, want, "portrait",
+                limit=img_limit if want == "image" else None,
+            )
             if not results and want == "video":
-                results = searcher.search(seg.broll_query, "image", "portrait")
+                results = searcher.search(seg.broll_query, "image", "portrait", limit=img_limit)
             if not results:
                 logger.warning("No B-roll for query %s", seg.broll_query)
                 continue
+            results = rank_candidates(
+                seg.broll_query,
+                results,
+                asset_type=results[0]["asset_type"],
+                scene_id=idx,
+                settings=settings,
+            )
             pick = results[0]
             asset_type = pick["asset_type"]
             source_url = pick["url"]
             external_id = pick.get("external_id")
+            pick_meta = pick.get("metadata")
             dest = ws / "assets" / f"{external_id or uuid.uuid4()}.{ 'jpg' if asset_type == 'image' else 'mp4' }"
             cache_dir = settings.storage_dir / "broll-cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -514,6 +530,9 @@ def _collect_broll(
                 source_url=source_url,
                 local_path=local,
                 license_info="Pexels",
+                # Only persisted when the Jina reranker actually scored this pick;
+                # otherwise left NULL exactly as before.
+                metadata_json=pick_meta if (pick_meta and "jina_score" in pick_meta) else None,
             )
         )
         broll_paths.append((seg.start, seg.end, local, asset_type))

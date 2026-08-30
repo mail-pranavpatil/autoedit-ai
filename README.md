@@ -37,6 +37,9 @@ Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
 
 - `OPENAI_API_KEY` — Whisper transcription + edit planner
 - `PEXELS_API_KEY` — B-roll search
+- `JINA_API_KEY` — optional. Only used when `ENABLE_JINA_RERANKER=true`, which
+  reranks B-roll image candidates with `jina-reranker-m0` before selection.
+  Off by default; any failure falls back to the existing selection.
 
 4. Generate a Fernet key (optional but recommended):
 

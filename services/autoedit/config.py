@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     pexels_api_key: str = ""
 
+    # Jina reranker (optional multimodal image ranking layer; OFF by default)
+    jina_api_key: str = ""
+    enable_jina_reranker: bool = False
+    jina_model: str = "jina-reranker-m0"
+    jina_max_candidates: int = 30
+    jina_timeout_seconds: float = 10.0
+
     storage_dir: Path = Path("./storage")
     assets_dir: Path = Path("./assets")
     sfx_debug: bool = False

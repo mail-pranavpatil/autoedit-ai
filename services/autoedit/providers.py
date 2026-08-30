@@ -23,7 +23,13 @@ class LLMProvider:
 
 
 class AssetSearchProvider:
-    def search(self, query: str, asset_type: str, orientation: str) -> list[dict]:
+    def search(
+        self,
+        query: str,
+        asset_type: str,
+        orientation: str,
+        limit: int | None = None,
+    ) -> list[dict]:
         raise NotImplementedError
 
 
@@ -208,7 +214,13 @@ Transcript: {json.dumps(transcript)[:12000]}
 
 
 class PexelsSearch(AssetSearchProvider):
-    def search(self, query: str, asset_type: str, orientation: str = "portrait") -> list[dict]:
+    def search(
+        self,
+        query: str,
+        asset_type: str,
+        orientation: str = "portrait",
+        limit: int | None = None,
+    ) -> list[dict]:
         settings = get_settings()
         if not settings.pexels_api_key:
             logger.warning("PEXELS_API_KEY missing; returning empty search")
@@ -216,10 +228,11 @@ class PexelsSearch(AssetSearchProvider):
         headers = {"Authorization": settings.pexels_api_key}
         with httpx.Client(timeout=30) as client:
             if asset_type == "image":
+                per_page = min(limit or 8, 80)  # Pexels caps per_page at 80
                 resp = client.get(
                     "https://api.pexels.com/v1/search",
                     headers=headers,
-                    params={"query": query, "orientation": orientation, "per_page": 8},
+                    params={"query": query, "orientation": orientation, "per_page": per_page},
                 )
                 resp.raise_for_status()
                 photos = resp.json().get("photos") or []
