@@ -2,7 +2,9 @@ node_modules/
 
 # Capacitor-generated native project (regenerate with `npm run add:ios`).
 # Keep it out of git; the checked-in native source is local-plugins/.
-ios/
+# Anchored with a leading slash so it does NOT also match the plugin's
+# local-plugins/autoedit-native/ios/ source folder.
+/ios/
 
 .DS_Store
 *.xcuserstate

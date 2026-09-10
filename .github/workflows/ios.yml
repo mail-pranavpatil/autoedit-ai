@@ -43,6 +43,14 @@ jobs:
         working-directory: apps/mobile/ios/App
         run: pod install
 
+      - name: Verify autoedit-native actually linked
+        working-directory: apps/mobile
+        run: |
+          test -f local-plugins/autoedit-native/ios/Sources/AutoeditNativePlugin/AutoEditNativePlugin.swift \
+            || { echo "::error::plugin Swift source missing (check .gitignore / commit)"; exit 1; }
+          grep -rq "class AutoEditNativePlugin" ios/App/Pods/ \
+            || { echo "::error::autoedit-native did not compile into Pods — cap sync/podspec broken"; exit 1; }
+
       - name: Compile (unsigned)
         working-directory: apps/mobile/ios/App
         run: |
