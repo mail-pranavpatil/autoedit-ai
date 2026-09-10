@@ -34,7 +34,7 @@ services:
     plan: starter          # a persistent disk requires a paid instance
     healthCheckPath: /health
     preDeployCommand: "alembic upgrade head"
-    startCommand: "bash /app/start-combined.sh"
+    dockerCommand: "bash /app/start-combined.sh"   # docker runtime uses dockerCommand, not startCommand
     disk:
       name: autoedit-data
       mountPath: /data
