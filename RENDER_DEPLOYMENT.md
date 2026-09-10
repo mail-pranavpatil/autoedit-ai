@@ -69,4 +69,31 @@ See `.env.example` for a full, annotated list.
 
 ---
 
+## Single-origin layout (required for the iOS shell)
+
+The `apps/mobile` WebView shell — and any deploy where web and API are on
+different hosts under a public suffix like `onrender.com` — needs the session
+cookie to be **same-site**. Serve everything behind one hostname:
+
+- Web service env: `NEXT_PUBLIC_API_URL=""` (browser calls `/api/*` same-origin)
+  and `API_PROXY_ORIGIN=<internal API url>`. `apps/web/next.config.js` rewrites
+  `/api/:path*` and `/health` to that origin.
+- API/worker env: `COOKIE_SECURE=true`, `IOS_REDIRECT_SCHEME=autoedit`,
+  `GOOGLE_REDIRECT_URI=https://<web-domain>/api/auth/callback`,
+  `FRONTEND_URL=https://<web-domain>`.
+- Google OAuth client: authorize `https://<web-domain>/api/auth/callback` and
+  `autoedit://auth/callback`.
+
+### Durable storage without object storage (single-user)
+
+Render disks attach to one service, so the multi-service split above can't share
+rendered files without S3/GCS/R2. For single-user / low volume, collapse
+`autoedit-api` + `autoedit-worker` + `autoedit-youtube-worker` into **one Render
+service** (uvicorn + `celery worker` + youtube queue via a process manager) with
+**one persistent disk** at `/data`; set `STORAGE_DIR=/data/storage`,
+`ASSETS_DIR=/data/assets`. Split the workers back out and wire object storage
+when render throughput or multi-instance forces it.
+
+---
+
 For more details, see root `.env.example`, `decisions.md`, and code comments.

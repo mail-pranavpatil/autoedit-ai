@@ -601,17 +601,19 @@ The AI should follow these rules.
 
 ## B-roll
 
-Use B-roll only when it improves comprehension.
+**Updated (dense web-image mode):** with `ENABLE_DENSE_BROLL=true` (default) and
+an `APIFY_API_TOKEN` set, nearly every spoken **phrase** gets its own full-screen
+image. A dedicated GPT pass (`broll_plan.plan_image_queries`) writes one literal,
+context-aware image-search query per caption phrase; those are fetched from
+Google Images via an Apify Actor, ranked by the Jina reranker, and pre-composited
+into a single b-roll track. Pexels is used for **video** b-roll only.
 
-Do not replace the talking head constantly.
-
-Default target:
+Set `ENABLE_DENSE_BROLL=false` to restore the original behaviour below:
 
 - 1 B-roll every 4–8 seconds
 - fewer for strong personal statements
 - more for explanatory sections
-
-Never cover the entire video with B-roll unless explicitly requested.
+- stock (Pexels) images and video, never full coverage
 
 ## Effects
 

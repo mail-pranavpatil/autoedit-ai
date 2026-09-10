@@ -24,13 +24,35 @@ class JinaImageRanker(ImageRanker):
         self._timeout = timeout
 
     def rank(self, query: str, candidates: list[dict]) -> RankResult:
-        payload = {
-            "model": self._model,
-            "query": query,
-            "documents": [{"image": c["url"]} for c in candidates],
-            "return_documents": False,
-        }
-        data = self._call_jina(payload)
+        # Jina 400s the whole batch if ONE image URL is unfetchable. Drop the
+        # named URL and retry a few times so a couple of dead links don't cost us
+        # the rerank entirely.
+        candidates = list(candidates)
+        data = None
+        for _ in range(4):
+            payload = {
+                "model": self._model,
+                "query": query,
+                "documents": [{"image": c["url"]} for c in candidates],
+                "return_documents": False,
+            }
+            try:
+                data = self._call_jina(payload)
+                break
+            except httpx.HTTPStatusError as exc:
+                body = exc.response.text if exc.response is not None else ""
+                bad = None
+                marker = "Failed to load image from "
+                if exc.response is not None and exc.response.status_code == 400 and marker in body:
+                    bad = body.split(marker, 1)[1].split('"', 1)[0].strip()
+                if not bad:
+                    raise
+                before = len(candidates)
+                candidates = [c for c in candidates if c["url"] != bad]
+                if not candidates or len(candidates) == before or len(candidates) < 2:
+                    raise
+        if data is None:
+            raise JinaRankerError("rerank failed after dropping unfetchable images")
 
         results = data.get("results") if isinstance(data, dict) else None
         if not isinstance(results, list) or not results:

@@ -5,9 +5,125 @@ from pathlib import Path
 
 from autoedit.config import get_settings
 from autoedit.edit_schema import DEFAULT_STYLE_PROFILE, EditPlan, MAX_VISUAL_ASSETS
-from autoedit.media import run_ffmpeg
+from autoedit.media import probe_media, run_ffmpeg
 
 logger = logging.getLogger("autoedit")
+
+
+def _broll_clip_filter(w: int, h: int, dur: float) -> str:
+    """One image -> a 1080x1920 clip: fit to frame, then a slow crop-pan (Ken Burns)."""
+    if h >= w:  # portrait / square-ish: cover-crop fills the frame
+        fit = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+    else:  # landscape: sharp image centered over a blurred blown-up copy of itself
+        fit = (
+            "split=2[bg][fg];"
+            "[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=32:2[bg2];"
+            "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fg2];"
+            "[bg2][fg2]overlay=(W-w)/2:(H-h)/2"
+        )
+    fade = min(0.35, max(0.12, dur / 8))
+    return (
+        f"{fit},setsar=1,"
+        f"scale=1188:2112:force_original_aspect_ratio=increase,"
+        f"crop=1080:1920:'(iw-1080)*t/{max(dur, 0.1):.3f}':'(ih-1920)*t/{max(dur, 0.1):.3f}*0.4',"
+        f"fps=30,format=yuv420p,"
+        f"fade=t=in:st=0:d={fade:.2f},fade=t=out:st={max(dur - fade, 0):.3f}:d={fade:.2f}"
+    )
+
+
+_CLIP_ENC = [
+    "-r", "30", "-c:v", "libx264", "-preset", "veryfast",
+    "-pix_fmt", "yuv420p", "-an", "-video_track_timescale", "15360",
+]
+
+
+def write_broll_track(
+    image_windows: list[tuple[float, float, str]],
+    ws: Path,
+    duration: float,
+    threads: int = 1,
+) -> tuple[str, list[tuple[float, float]]] | None:
+    """Pre-render every image B-roll cut into ONE 1080x1920 track + its show-windows.
+
+    Keeps the final filtergraph to a single extra input/overlay instead of dozens
+    of concurrent image decoders (see ``render_ffmpeg_threads``).
+    """
+    windows = sorted((w for w in image_windows if w[1] - w[0] > 0.05), key=lambda w: w[0])
+    if not windows:
+        return None
+    out_dir = ws / "broll"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    thr = ["-threads", str(max(1, int(threads)))]
+    duration = max(duration, 0.5)
+
+    parts: list[Path] = []
+    shown: list[tuple[float, float]] = []
+    cursor = 0.0
+
+    def _black(gap: float, tag: str) -> Path:
+        p = out_dir / f"gap_{tag}.mp4"
+        run_ffmpeg(
+            ["ffmpeg", "-y", *thr, "-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=30:d={gap:.3f}",
+             "-t", f"{gap:.3f}", *_CLIP_ENC, str(p)],
+            timeout=120,
+        )
+        return p
+
+    for i, (start, end, path) in enumerate(windows):
+        start = max(cursor, float(start))
+        end = min(duration, float(end))
+        if end - start < 0.2:
+            continue
+        if start > cursor + 0.05:
+            parts.append(_black(start - cursor, f"{i}"))
+        try:
+            info = probe_media(path)
+            w, h = int(info.get("width") or 0), int(info.get("height") or 0)
+        except Exception:  # noqa: BLE001
+            w = h = 1080
+        clip = out_dir / f"clip_{i}.mp4"
+        dur = end - start
+        try:
+            run_ffmpeg(
+                ["ffmpeg", "-y", *thr, "-loop", "1", "-i", path,
+                 "-vf", _broll_clip_filter(w or 1080, h or 1080, dur),
+                 "-t", f"{dur:.3f}", *_CLIP_ENC, str(clip)],
+                timeout=300,
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad image must not kill the track
+            logger.warning("b-roll clip %s failed (%s); leaving a gap", path, exc)
+            parts.append(_black(dur, f"f{i}"))
+            cursor = end
+            continue
+        parts.append(clip)
+        shown.append((round(start, 3), round(end, 3)))
+        cursor = end
+
+    if duration > cursor + 0.05:
+        parts.append(_black(duration - cursor, "tail"))
+    if not shown:
+        return None
+
+    listfile = out_dir / "track.txt"
+    listfile.write_text(
+        "ffconcat version 1.0\n"
+        + "".join(f"file '{p.resolve().as_posix()}'\n" for p in parts)
+    )
+    track = out_dir / "broll_track.mp4"
+    try:
+        run_ffmpeg(
+            ["ffmpeg", "-y", *thr, "-f", "concat", "-safe", "0", "-i", str(listfile),
+             "-c", "copy", str(track)],
+            timeout=300,
+        )
+    except Exception:  # noqa: BLE001 - params mismatch: re-encode the concat
+        run_ffmpeg(
+            ["ffmpeg", "-y", *thr, "-f", "concat", "-safe", "0", "-i", str(listfile),
+             *_CLIP_ENC, "-t", f"{duration:.3f}", str(track)],
+            timeout=600,
+        )
+    logger.info("[BROLL_TRACK] windows=%d track=%s", len(shown), track)
+    return str(track), shown
 
 
 def _safe_path(path: str, allowed_roots: list[Path]) -> str:
@@ -61,6 +177,8 @@ def compose_final(
     caption_overlays: list[tuple[float, float, str]] | None = None,
     caption_video_path: str | None = None,
     caption_concat_path: str | None = None,
+    broll_track_path: str | None = None,
+    broll_track_windows: list[tuple[float, float]] | None = None,
 ) -> list[str]:
     """Build a 1080x1920 H.264/AAC video from a validated EditPlan.
 
@@ -87,7 +205,12 @@ def compose_final(
     input_index = 1
     broll_labels: list[tuple[int, float, float, str]] = []
 
+    # Dense image B-roll is pre-composited into one track (broll_track_path); only
+    # the remaining video B-roll goes through the per-asset overlay loop here.
+    track_is_used = bool(broll_track_path and broll_track_windows)
     for start, end, path, asset_type in (broll_paths or [])[:MAX_VISUAL_ASSETS]:
+        if track_is_used and asset_type == "image":
+            continue
         safe = _safe_path(path, roots + [Path(path).resolve().parent])
         seg_dur = max(0.6, end - start)
         if asset_type == "image":
@@ -95,6 +218,12 @@ def compose_final(
         else:
             inputs += ["-stream_loop", "-1", "-t", f"{seg_dur:.3f}", *thr, "-i", safe]
         broll_labels.append((input_index, start, end, asset_type))
+        input_index += 1
+
+    broll_track_idx = None
+    if track_is_used:
+        broll_track_idx = input_index
+        inputs += [*thr, "-i", _safe_path(broll_track_path, roots + [Path(broll_track_path).resolve().parent])]
         input_index += 1
 
     music_idx = None
@@ -165,6 +294,16 @@ def compose_final(
             f"[{last}][{shifted}]overlay=0:0:enable='between(t,{start:.3f},{end:.3f})':eof_action=pass[{v_label}]"
         )
         last = v_label
+
+    if broll_track_idx is not None:
+        enable = "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in broll_track_windows)
+        filters.append(
+            f"[{broll_track_idx}:v]scale=1080:1920,fps=30,setsar=1,format=yuv420p[btrk]"
+        )
+        filters.append(
+            f"[{last}][btrk]overlay=0:0:enable='{enable}':eof_action=pass[vbtrk]"
+        )
+        last = "vbtrk"
 
     if cap_video_idx is not None:
         c_label = "capv"

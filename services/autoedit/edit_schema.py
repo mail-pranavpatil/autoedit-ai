@@ -35,7 +35,9 @@ MusicCategory = Literal["thank_you", "cornfield_chase", "feeling_blue"]
 Visual = Literal["talking_head", "broll"]
 BrollType = Literal["video", "image"]
 SfxKind = Literal["accent", "transition", "riser", "combo"]
-MAX_VISUAL_ASSETS = 16
+# Dense per-phrase image B-roll needs one asset per spoken phrase; a safety
+# slice, not a design target. ~120 covers a 3-minute reel at phrase density.
+MAX_VISUAL_ASSETS = 120
 DISALLOWED_QUERY_TOKS = (";", "&&", "|", "`", "$(", "../")
 
 ALLOWED_EFFECTS = set(Effect.__args__)  # type: ignore[attr-defined]

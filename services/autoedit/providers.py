@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 
@@ -272,6 +273,157 @@ class PexelsSearch(AssetSearchProvider):
             return results
 
 
+APIFY_DATASET_URL = "https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items"
+
+_ITEM_URL_KEYS = ("imageUrl", "image", "url", "src", "link", "contentUrl", "original")
+_ITEM_QUERY_KEYS = ("searchQuery", "query", "keyword", "search", "term")
+_ITEM_W_KEYS = ("width", "imageWidth", "originalWidth")
+_ITEM_H_KEYS = ("height", "imageHeight", "originalHeight")
+_IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff")
+# Not real image files - crawler/proxy endpoints Google Images sometimes returns.
+# The Jina reranker 400s the whole batch if any one URL is unfetchable.
+_URL_DENY = ("lookaside.", "/crawler", "/seo/", "gstatic.com/images?", "google.com/imgres")
+# Paid-stock / agency hosts: hotlinks return a watermarked preview or an
+# "Access Restricted" block page served *as an image*, which passes decode checks
+# but is garbage on screen. Skip them entirely.
+_STOCK_DENY = (
+    "vectorstock.com", "shutterstock.com", "istockphoto.com", "gettyimages.",
+    "dreamstime.com", "alamy.com", "123rf.com", "depositphotos.com",
+    "stock.adobe.com", "adobestock", "bigstockphoto.com", "canstockphoto.com",
+    "agefotostock.com", "picfair.com", "pond5.com",
+)
+
+
+def _looks_like_image_url(url: str) -> bool:
+    low = url.lower()
+    if any(bad in low for bad in _URL_DENY) or any(host in low for host in _STOCK_DENY):
+        return False
+    path = url.split("?", 1)[0].split("#", 1)[0].lower()
+    if path.endswith(_IMG_EXTS):
+        return True
+    # No extension is fine only when there's no query string (e.g. lh3.googleusercontent.com/...)
+    return "?" not in url
+
+
+def _first(item: dict, keys) -> object | None:
+    for k in keys:
+        v = item.get(k)
+        if v:
+            return v
+    return None
+
+
+class ApifyImageSearch(AssetSearchProvider):
+    """Real web images via an Apify Google-Images-scraper Actor.
+
+    One Actor run per call handles many queries at once (a scrape run takes tens
+    of seconds, so per-query calls are not viable). Output dicts match the shape
+    ``PexelsSearch`` returns and the Jina reranker expects.
+    """
+
+    name = "apify"
+
+    def __init__(self, token: str | None = None, actor: str | None = None, timeout: float | None = None) -> None:
+        s = get_settings()
+        self._token = token if token is not None else s.apify_api_token
+        self._actor = actor or s.apify_image_actor
+        self._timeout = float(timeout if timeout is not None else s.apify_timeout_seconds)
+
+    # -- input/output seam: adjust here if the Actor's schema differs -------------
+    def _build_input(self, queries: list[str], per_query: int) -> dict:
+        return {
+            "queries": list(queries),
+            "maxImagesPerQuery": per_query,
+            "maxResultsPerQuery": per_query,
+            "resultsPerPage": per_query,
+            "downloadImages": False,
+            "saveImages": False,
+        }
+
+    def _map_item(self, item: dict) -> dict | None:
+        if not isinstance(item, dict):
+            return None
+        url = _first(item, _ITEM_URL_KEYS)
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            return None
+        if not _looks_like_image_url(url):
+            return None
+        w = _first(item, _ITEM_W_KEYS)
+        h = _first(item, _ITEM_H_KEYS)
+        try:
+            w = int(w) if w is not None else None
+            h = int(h) if h is not None else None
+        except (TypeError, ValueError):
+            w = h = None
+        if w and h and min(w, h) < 500:
+            return None
+        return {
+            "external_id": hashlib.sha1(url.encode("utf-8")).hexdigest()[:16],
+            "asset_type": "image",
+            "url": url,
+            "license": "web:google-images",
+            "metadata": {
+                "source": item.get("source") or item.get("displayedUrl") or item.get("sourceUrl"),
+                "title": item.get("title"),
+                "width": w,
+                "height": h,
+            },
+        }
+    # --------------------------------------------------------------------------
+
+    def _item_query(self, item: dict) -> str | None:
+        q = _first(item, _ITEM_QUERY_KEYS)
+        return q.strip().lower() if isinstance(q, str) and q.strip() else None
+
+    def search_many(self, queries: list[str], per_query: int | None = None) -> dict[str, list[dict]]:
+        norm = []
+        seen = set()
+        for q in queries:
+            key = (q or "").strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                norm.append(key)
+        out: dict[str, list[dict]] = {q: [] for q in norm}
+        if not norm or not self._token:
+            if not self._token:
+                logger.warning("APIFY_API_TOKEN missing; skipping web image search")
+            return out
+        per_query = per_query or get_settings().apify_results_per_query
+        try:
+            resp = httpx.post(
+                APIFY_DATASET_URL.format(actor=self._actor),
+                params={"token": self._token, "timeout": int(self._timeout)},
+                json=self._build_input(norm, per_query),
+                timeout=self._timeout + 15,
+            )
+            resp.raise_for_status()
+            items = resp.json()
+        except Exception as exc:  # noqa: BLE001 - a scrape failure must not break rendering
+            logger.warning("Apify image search failed: %s", exc)
+            return out
+        if not isinstance(items, list):
+            return out
+        single = norm[0] if len(norm) == 1 else None
+        for raw in items:
+            mapped = self._map_item(raw)
+            if not mapped:
+                continue
+            q = self._item_query(raw) or single
+            if q in out:
+                out[q].append(mapped)
+            elif single:
+                out[single].append(mapped)
+        logger.info(
+            "[APIFY_IMAGES] queries=%d results=%d",
+            len(norm),
+            sum(len(v) for v in out.values()),
+        )
+        return out
+
+    def search(self, query: str, asset_type: str, orientation: str = "portrait", limit: int | None = None) -> list[dict]:
+        return self.search_many([query], limit).get(query.strip().lower(), [])
+
+
 def get_transcription_provider() -> TranscriptionProvider:
     return OpenAITranscription()
 
@@ -281,4 +433,11 @@ def get_llm_provider() -> LLMProvider:
 
 
 def get_search_provider() -> AssetSearchProvider:
+    return PexelsSearch()
+
+
+def get_image_search_provider() -> AssetSearchProvider:
+    """Web images (Apify) when configured, else fall back to Pexels stock images."""
+    if get_settings().apify_api_token:
+        return ApifyImageSearch()
     return PexelsSearch()

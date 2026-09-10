@@ -21,7 +21,12 @@ class Settings(BaseSettings):
 
     google_client_id: str = ""
     google_client_secret: str = ""
-    google_redirect_uri: str = "http://localhost:3000/api/auth/callback"
+    google_redirect_uri: str = "http://localhost:8000/api/auth/callback"
+    # Session cookie: set true once served over HTTPS behind a single origin.
+    cookie_secure: bool = False
+    # Custom URL scheme the iOS shell registers; the mobile OAuth callback
+    # redirects to "<scheme>://auth/callback?token=..." instead of setting a cookie.
+    ios_redirect_scheme: str = "autoedit"
 
     openai_api_key: str = ""
     transcription_provider: str = "openai"
@@ -34,7 +39,18 @@ class Settings(BaseSettings):
     enable_jina_reranker: bool = False
     jina_model: str = "jina-reranker-m0"
     jina_max_candidates: int = 30
-    jina_timeout_seconds: float = 10.0
+    jina_timeout_seconds: float = 25.0
+
+    # Dense per-phrase web-image B-roll (Apify Google Images). Kill-switch:
+    # enable_dense_broll=false falls back to the old sparse Pexels behaviour.
+    enable_dense_broll: bool = True
+    apify_api_token: str = ""
+    apify_image_actor: str = "hooli~google-images-scraper"
+    apify_results_per_query: int = 15
+    apify_timeout_seconds: float = 180.0
+    # Per-phrase image-query planner. One call per video; gpt-4o follows the
+    # coverage + on-subject rules much better than a mini model.
+    broll_query_model: str = "gpt-4o"
 
     storage_dir: Path = Path("./storage")
     assets_dir: Path = Path("./assets")

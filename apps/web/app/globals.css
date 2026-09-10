@@ -11,6 +11,8 @@ body {
   background: #0f1115;
   color: #e8ecf4;
   min-height: 100%;
+  /* Kill the WebView rubber-band scroll so the wrapped app feels native. */
+  overscroll-behavior: none;
 }
 
 body {

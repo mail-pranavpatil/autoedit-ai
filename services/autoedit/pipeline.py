@@ -13,8 +13,9 @@ from sqlalchemy.exc import IntegrityError
 
 from autoedit.config import get_settings
 from autoedit.captions import phrases_from_plan_or_transcript, render_caption_pngs, write_caption_concat
-from autoedit.compose import compose_final
-from autoedit.drive import download_file, download_url
+from autoedit.compose import compose_final, write_broll_track
+from autoedit.broll_plan import build_dense_broll, plan_image_queries
+from autoedit.drive import download_file, download_url, download_image
 from autoedit.edit_schema import (
     EditPlan,
     MAX_VISUAL_ASSETS,
@@ -44,7 +45,12 @@ from autoedit.models import (
     Transcript,
     Video,
 )
-from autoedit.providers import get_llm_provider, get_search_provider, get_transcription_provider
+from autoedit.providers import (
+    ApifyImageSearch,
+    get_llm_provider,
+    get_search_provider,
+    get_transcription_provider,
+)
 from autoedit.security import decrypt_secret, hash_file
 from autoedit.sfx.engine import attach_sfx, mix_payload
 
@@ -307,7 +313,20 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
     )
     plan = plan.model_copy(update={"caption_phrases": phrases or None})
     tx_payload = _transcript_payload(tx_row)
-    plan = enforce_visual_cadence(plan, tx_payload, style)
+    if settings.enable_dense_broll and phrases:
+        # Dense mode owns the whole timeline: one image per phrase. Skip the
+        # sparse Pexels-video gap-filler; keep only the planner's own video B-roll.
+        bump("PLANNING", f"Matching a visual to each of {len(phrases)} spoken lines (GPT)")
+        queries = plan_image_queries(
+            phrases,
+            plan.video_summary,
+            plan.tone,
+            tx_row.full_text if tx_row else "",
+            settings,
+        )
+        plan = build_dense_broll(plan, phrases, queries, style, max_assets=MAX_VISUAL_ASSETS)
+    else:
+        plan = enforce_visual_cadence(plan, tx_payload, style)
     dumped = plan.model_dump(mode="json")
     latest_plan.plan_json = dumped
     flag_modified(latest_plan, "plan_json")
@@ -457,88 +476,139 @@ def _collect_broll(
     if refresh:
         db.query(BrollAsset).filter(BrollAsset.video_id == video.id).delete()
         db.commit()
-    searcher = get_search_provider()
-    broll_paths: list[tuple[float, float, str, str]] = []
-
+    pexels = get_search_provider()
+    cache_dir = settings.storage_dir / "broll-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
     rerank_images = bool(settings.enable_jina_reranker)
-    for idx, seg in enumerate(plan.segments):
-        if seg.visual != "broll" or not seg.broll_query:
-            continue
-        if len(broll_paths) >= MAX_VISUAL_ASSETS:
-            break
+    img_limit = settings.jina_max_candidates if rerank_images else None
+
+    segs = [
+        (idx, seg)
+        for idx, seg in enumerate(plan.segments)
+        if seg.visual == "broll" and seg.broll_query
+    ][:MAX_VISUAL_ASSETS]
+
+    def _cached(key: str):
+        row = db.query(AssetCache).filter(AssetCache.cache_key == key).first()
+        if row and row.local_path and Path(row.local_path).exists():
+            return row
+        return None
+
+    # One Apify run for every distinct image query not already on disk.
+    want_apify = [
+        s.broll_query.lower().strip()
+        for _, s in segs
+        if (s.broll_type or "video") == "image" and not _cached(f"apify:image:{s.broll_query.lower().strip()}")
+    ]
+    apify_cands: dict[str, list[dict]] = {}
+    if want_apify and settings.enable_dense_broll:
+        bump("SEARCHING_BROLL", f"Scraping {len(want_apify)} image searches from the web (Apify · Google Images)")
+        apify_cands = ApifyImageSearch().search_many(want_apify, settings.apify_results_per_query)
+        got = sum(len(v) for v in apify_cands.values())
+        bump("SEARCHING_BROLL", f"Ranking {got} web images for relevance to what you say (Jina AI)")
+
+    image_total = sum(1 for _, s in segs if (s.broll_type or "video") == "image")
+    done_images = 0
+    broll_paths: list[tuple[float, float, str, str]] = []
+    used_urls: set[str] = set()  # no repeated image across the reel
+    for idx, seg in segs:
         want = seg.broll_type or "video"
-        cache_key = f"pexels:{want}:{seg.broll_query.lower().strip()}"
-        cached = db.query(AssetCache).filter(AssetCache.cache_key == cache_key).first()
-        local = None
+        q = seg.broll_query.lower().strip()
+        provider = "apify" if want == "image" else "pexels"
+        cache_key = f"{provider}:{want}:{q}"
+        cached = _cached(cache_key)
+        local = external_id = source_url = pick_meta = None
         asset_type = want
-        source_url = None
-        external_id = None
-        pick_meta = None
-        if cached and cached.local_path and Path(cached.local_path).exists():
+        license_info = "web:google-images" if want == "image" else "Pexels"
+
+        if cached:
             local = cached.local_path
             asset_type = (cached.payload_json or {}).get("asset_type", want)
             pick_meta = (cached.payload_json or {}).get("metadata")
-        else:
-            img_limit = settings.jina_max_candidates if rerank_images else None
-            results = searcher.search(
-                seg.broll_query, want, "portrait",
-                limit=img_limit if want == "image" else None,
+            external_id = (cached.payload_json or {}).get("external_id")
+            source_url = (cached.payload_json or {}).get("url")
+        elif want == "image":
+            candidates = apify_cands.get(q) or []
+            if not candidates:  # Apify empty -> fall back to Pexels stock images
+                candidates = pexels.search(seg.broll_query, "image", "portrait", limit=img_limit)
+                provider, license_info = "pexels", "Pexels"
+                cache_key = f"{provider}:image:{q}"
+            if not candidates:
+                logger.warning("No image B-roll for query %s", seg.broll_query)
+                continue
+            ranked = rank_candidates(
+                seg.broll_query, candidates, asset_type="image", scene_id=idx, settings=settings
             )
-            if not results and want == "video":
-                results = searcher.search(seg.broll_query, "image", "portrait", limit=img_limit)
+            done_images += 1
+            bump("SEARCHING_BROLL", f'Adding image {done_images}/{image_total}: "{seg.broll_query}"')
+            pick = None
+            fresh = [c for c in ranked if c.get("url") not in used_urls]
+            for cand in (fresh or ranked)[:8]:
+                dest = cache_dir / f"{cand.get('external_id') or uuid.uuid4()}.jpg"
+                try:
+                    if not dest.exists():
+                        download_image(cand["url"], dest)
+                    pick, local = cand, str(dest)
+                    break
+                except Exception as exc:  # noqa: BLE001 - try the next ranked candidate
+                    logger.warning("skip image candidate (%s): %s", cand.get("url"), exc)
+                    dest.unlink(missing_ok=True)
+            if pick:
+                used_urls.add(pick["url"])
+            if not pick:
+                logger.warning("all image candidates failed for %s", seg.broll_query)
+                continue
+            asset_type = "image"
+            external_id, source_url, pick_meta = pick.get("external_id"), pick["url"], pick.get("metadata")
+            _remember_asset(db, cache_key, provider, pick, local)
+        else:  # video -> Pexels, unchanged behaviour
+            results = pexels.search(seg.broll_query, "video", "portrait")
+            if not results:
+                results = pexels.search(seg.broll_query, "image", "portrait", limit=img_limit)
             if not results:
                 logger.warning("No B-roll for query %s", seg.broll_query)
                 continue
             results = rank_candidates(
-                seg.broll_query,
-                results,
-                asset_type=results[0]["asset_type"],
-                scene_id=idx,
-                settings=settings,
+                seg.broll_query, results, asset_type=results[0]["asset_type"], scene_id=idx, settings=settings
             )
             pick = results[0]
             asset_type = pick["asset_type"]
-            source_url = pick["url"]
-            external_id = pick.get("external_id")
-            pick_meta = pick.get("metadata")
-            dest = ws / "assets" / f"{external_id or uuid.uuid4()}.{ 'jpg' if asset_type == 'image' else 'mp4' }"
-            cache_dir = settings.storage_dir / "broll-cache"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            dest = cache_dir / dest.name
+            source_url, external_id, pick_meta = pick["url"], pick.get("external_id"), pick.get("metadata")
+            ext = "jpg" if asset_type == "image" else "mp4"
+            dest = cache_dir / f"{external_id or uuid.uuid4()}.{ext}"
             if not dest.exists():
                 download_url(source_url, dest)
             local = str(dest)
-            try:
-                db.add(
-                    AssetCache(
-                        cache_key=cache_key,
-                        provider="pexels",
-                        payload_json=pick,
-                        local_path=local,
-                    )
-                )
-                db.commit()
-            except IntegrityError:
-                db.rollback()
+            _remember_asset(db, f"pexels:{asset_type}:{q}", "pexels", pick, local)
+
         db.add(
             BrollAsset(
                 video_id=video.id,
-                provider="pexels",
+                provider=provider,
                 external_id=external_id,
                 asset_type=asset_type,
                 query=seg.broll_query,
                 source_url=source_url,
                 local_path=local,
-                license_info="Pexels",
-                # Only persisted when the Jina reranker actually scored this pick;
-                # otherwise left NULL exactly as before.
+                license_info=license_info,
                 metadata_json=pick_meta if (pick_meta and "jina_score" in pick_meta) else None,
             )
         )
         broll_paths.append((seg.start, seg.end, local, asset_type))
     db.commit()
     bump("BROLL_READY", "B-roll ready")
+    # ponytail: one Apify run + serial downloads per video. A reel with >~60
+    # distinct phrases makes this stage the wall-time bottleneck -- pool the
+    # downloads or cache queries across videos if that becomes a problem.
     return broll_paths[:MAX_VISUAL_ASSETS], plan
+
+
+def _remember_asset(db: Session, cache_key: str, provider: str, pick: dict, local: str) -> None:
+    try:
+        db.add(AssetCache(cache_key=cache_key, provider=provider, payload_json=pick, local_path=local))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
 
 
 def _render_stage(
@@ -584,6 +654,20 @@ def _render_stage(
         if not caption_concat:
             logger.warning("Captions enabled but no overlay frames were generated")
 
+    # Dense image B-roll -> one pre-rendered track + its show-windows; the
+    # per-asset overlay loop in compose_final then only handles video B-roll.
+    track_path = track_windows = None
+    image_windows = [
+        (s, e, p) for (s, e, p, t) in broll_paths[:MAX_VISUAL_ASSETS] if t == "image"
+    ]
+    if image_windows:
+        bump("RENDERING", f"Compositing {len(image_windows)} images into the video track")
+        built = write_broll_track(
+            image_windows, ws, float(video.duration or 0), threads=settings.render_ffmpeg_threads
+        )
+        if built:
+            track_path, track_windows = built
+
     output = ws / "final.mp4"
     compose_final(
         source_path=str(source),
@@ -596,6 +680,8 @@ def _render_stage(
         style=style,
         allowed_roots=allowed + [ws, settings.storage_dir / "broll-cache"],
         caption_concat_path=caption_concat,
+        broll_track_path=track_path,
+        broll_track_windows=track_windows,
     )
     bump("RENDERED", "Rendered")
 

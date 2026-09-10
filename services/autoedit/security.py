@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -39,6 +40,35 @@ def read_session_token(token: str) -> str | None:
     if int(body.get("exp", 0)) < int(time.time()):
         return None
     return str(body.get("uid") or "") or None
+
+
+def create_oauth_state(platform: str = "web") -> str:
+    """Signed OAuth `state`. Carries the caller platform ("web" | "ios") with
+    integrity so the callback can trust it, plus a nonce so states are unique.
+
+    ponytail: signed, not stored server-side, so this is state *integrity*, not
+    full CSRF binding. Fine for single-user/private. Add per-request nonce
+    storage + compare if this ever goes multi-tenant.
+    """
+    secret = get_settings().session_secret
+    encoded = base64.urlsafe_b64encode(
+        json.dumps({"p": platform or "web", "n": secrets.token_urlsafe(8)}).encode()
+    ).decode()
+    return f"{encoded}.{_sign(encoded, secret)}"
+
+
+def read_oauth_state(token: str) -> dict | None:
+    secret = get_settings().session_secret
+    try:
+        encoded, signature = token.split(".", 1)
+    except ValueError:
+        return None
+    if not hmac.compare_digest(signature, _sign(encoded, secret)):
+        return None
+    try:
+        return json.loads(base64.urlsafe_b64decode(encoded.encode()).decode())
+    except Exception:
+        return None
 
 
 def _fernet() -> Fernet:

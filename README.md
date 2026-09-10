@@ -36,7 +36,11 @@ Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
 3. Add keys (required for a real pipeline run):
 
 - `OPENAI_API_KEY` — Whisper transcription + edit planner
-- `PEXELS_API_KEY` — B-roll search
+- `PEXELS_API_KEY` — video B-roll search
+- `APIFY_API_TOKEN` — dense per-phrase web-image B-roll (Google Images via an
+  Apify Actor). Set `ENABLE_DENSE_BROLL=false` to disable and fall back to sparse
+  Pexels stock. Actor id in `APIFY_IMAGE_ACTOR` (default
+  `emastra~google-images-scraper`).
 - `JINA_API_KEY` — optional. Only used when `ENABLE_JINA_RERANKER=true`, which
   reranks B-roll image candidates with `jina-reranker-m0` before selection.
   Off by default; any failure falls back to the existing selection.

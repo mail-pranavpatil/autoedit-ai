@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
+import socket
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException
@@ -12,6 +15,9 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 logger = logging.getLogger("autoedit")
+
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MIN_IMAGE_SHORT_SIDE = 500
 
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm"}
 VIDEO_MIMES = {
@@ -147,3 +153,102 @@ def download_url(url: str, dest: Path) -> None:
             with open(dest, "wb") as f:
                 for chunk in resp.iter_bytes():
                     f.write(chunk)
+
+
+class ImageFetchError(RuntimeError):
+    """A web image URL could not be fetched into a usable local file."""
+
+
+def _assert_public_host(host: str) -> None:
+    """Reject URLs that resolve to private / loopback / link-local / reserved IPs."""
+    if not host:
+        raise ImageFetchError("no host in URL")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise ImageFetchError(f"DNS resolution failed for {host}: {exc}") from exc
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise ImageFetchError(f"host {host} resolves to non-public address {ip}")
+
+
+def download_image(url: str, dest: Path) -> None:
+    """Fetch an arbitrary web image to ``dest`` with SSRF + content guards.
+
+    Only for untrusted image URLs (web search results). Trusted sources (Drive,
+    Pexels) keep using :func:`download_url`. Raises :class:`ImageFetchError` on any
+    problem so callers can move on to the next candidate.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    current = url
+    with httpx.Client(timeout=30, follow_redirects=False) as client:
+        for _ in range(4):
+            parsed = urlparse(current)
+            if parsed.scheme not in {"http", "https"}:
+                raise ImageFetchError(f"disallowed scheme: {parsed.scheme!r}")
+            _assert_public_host(parsed.hostname or "")
+            try:
+                with client.stream("GET", current) as resp:
+                    if resp.is_redirect:
+                        loc = resp.headers.get("location")
+                        if not loc:
+                            raise ImageFetchError("redirect without Location")
+                        current = str(httpx.URL(current).join(loc))
+                        continue
+                    resp.raise_for_status()
+                    ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                    # Many CDNs serve images as octet-stream / no type; probe_media
+                    # below is the real gate. Only reject an explicit non-image type.
+                    if ctype and not ctype.startswith("image/") and ctype not in {
+                        "application/octet-stream", "binary/octet-stream", "application/binary",
+                    }:
+                        raise ImageFetchError(f"not an image (Content-Type: {ctype})")
+                    size = 0
+                    with open(dest, "wb") as f:
+                        for chunk in resp.iter_bytes():
+                            size += len(chunk)
+                            if size > MAX_IMAGE_BYTES:
+                                raise ImageFetchError("image exceeds size cap")
+                            f.write(chunk)
+                    break
+            except httpx.HTTPError as exc:
+                raise ImageFetchError(f"fetch failed: {exc}") from exc
+        else:
+            raise ImageFetchError("too many redirects")
+
+    from autoedit.media import probe_media
+
+    try:
+        info = probe_media(str(dest))
+    except Exception as exc:  # noqa: BLE001 - undecodable / not really an image
+        dest.unlink(missing_ok=True)
+        raise ImageFetchError(f"not a decodable image: {exc}") from exc
+    if min(info.get("width") or 0, info.get("height") or 0) < MIN_IMAGE_SHORT_SIDE:
+        dest.unlink(missing_ok=True)
+        raise ImageFetchError(f"image too small: {info.get('width')}x{info.get('height')}")
+
+    # Flatten transparency onto white (logos on transparent bg otherwise render as
+    # black / a checkerboard), then reject near-solid images (block pages,
+    # "Access Restricted" screens, error placeholders).
+    try:
+        from PIL import Image, ImageStat
+
+        with Image.open(dest) as im:
+            im.load()
+            if im.mode in ("RGBA", "LA", "P") or "transparency" in im.info:
+                rgba = im.convert("RGBA")
+                flat = Image.new("RGB", rgba.size, (255, 255, 255))
+                flat.paste(rgba, mask=rgba.split()[-1])
+                flat.save(dest, "JPEG", quality=90)
+                im = flat
+            stat = ImageStat.Stat(im.convert("L").resize((48, 48)))
+            stddev, mean = stat.stddev[0], stat.mean[0]
+    except Exception:  # noqa: BLE001 - if PIL can't read it, probe_media already vouched
+        stddev, mean = 99.0, 128.0
+    if stddev < 12.0:
+        dest.unlink(missing_ok=True)
+        raise ImageFetchError(f"image is near-uniform (stddev {stddev:.1f}) - likely a block page")
+    if mean < 30.0:
+        dest.unlink(missing_ok=True)
+        raise ImageFetchError(f"image is too dark (mean {mean:.1f})")

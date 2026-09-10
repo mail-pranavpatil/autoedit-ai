@@ -75,12 +75,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-ink lg:grid lg:grid-cols-[240px_1fr]">
+    <div className="min-h-screen bg-ink pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:grid lg:grid-cols-[240px_1fr]">
       <aside className="hidden min-h-screen flex-col border-r border-line bg-panel lg:flex">
         <Nav />
       </aside>
       <div className="flex min-h-screen flex-col">
-        <header className="flex items-center justify-between border-b border-line px-4 py-3 lg:px-8">
+        <header className="flex items-center justify-between border-b border-line px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:px-8">
           <button className="rounded-lg px-2 py-1 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
             Menu
           </button>
@@ -89,11 +89,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             API
           </a>
         </header>
-        <main className="flex-1 p-4 lg:p-8">{children}</main>
+        <main className="flex-1 p-4 pb-[calc(1rem_+_env(safe-area-inset-bottom))] lg:p-8 lg:pb-8">{children}</main>
       </div>
       {open && (
         <div className="fixed inset-0 z-30 bg-black/60 lg:hidden" onClick={() => setOpen(false)}>
-          <div className="flex h-full w-64 flex-col bg-panel" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex h-full w-64 flex-col bg-panel pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)]"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Nav />
           </div>
         </div>
