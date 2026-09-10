@@ -1,4 +1,8 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Default "" = same-origin: every request becomes a relative /api/... path that
+// next.config.js proxies to the FastAPI service (keeps the session cookie
+// same-site). Set NEXT_PUBLIC_API_URL only to point the browser at a different
+// API host directly (cross-origin).
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export type Project = {
   id: string;
