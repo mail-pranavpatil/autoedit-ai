@@ -5,7 +5,14 @@ app. All features come from the web app unchanged; this package only adds the
 things a bare WebView can't do (Google OAuth, file downloads, external links,
 safe-area layout) and packages it as an installable iOS app.
 
-Requires **macOS + Xcode + CocoaPods**. Nothing here builds on Windows/Linux.
+Requires **macOS + Xcode + CocoaPods** to build locally. On Windows/Linux you can
+still edit everything and let CI compile it — `.github/workflows/ios.yml` runs the
+build on a `macos-latest` runner on every push under `apps/mobile/**` (or via
+**Actions → Build iOS → Run workflow**).
+
+The native glue lives in `local-plugins/autoedit-native/` as a local Capacitor
+plugin. `npx cap sync ios` links it through CocoaPods automatically — there is no
+"add the file to the Xcode target" step.
 
 ## Prerequisites
 
@@ -18,27 +25,23 @@ Requires **macOS + Xcode + CocoaPods**. Nothing here builds on Windows/Linux.
 - Google Cloud console → the OAuth client → add redirect URIs:
   `https://<domain>/api/auth/callback` **and** `autoedit://auth/callback`.
 
-## One-time setup
+## Configure for your deployment
+
+Edit two constants so they match your single-origin domain:
+
+- `capacitor.config.js` → `SERVER_URL` (or set the `AUTOEDIT_APP_URL` env var at
+  build time).
+- `local-plugins/autoedit-native/ios/Sources/AutoeditNativePlugin/AutoEditNativePlugin.swift`
+  → `appHost` (registrable domain, no scheme).
+
+## One-time setup (macOS)
 
 ```bash
 cd apps/mobile
-npm install
-
-# point the shell at your deployment
-export AUTOEDIT_APP_URL="https://<domain>"
+npm ci                   # resolves the local autoedit-native plugin
 npx cap add ios          # generates ios/ (git-ignored)
-
-# wire in the native glue
-cp ios-glue/AutoEditNativePlugin.swift ios/App/App/
-#   then in Xcode: right-click the App group → Add Files → select that file,
-#   target = App.
+npx cap sync ios         # copies web assets + links the plugin pod
 ```
-
-Edit two constants so they match your domain:
-
-- `capacitor.config.ts` → `SERVER_URL` (or the `AUTOEDIT_APP_URL` env var).
-- `ios/App/App/AutoEditNativePlugin.swift` → `appHost` (registrable domain, no
-  scheme).
 
 ## Xcode config (`ios/App/App/`)
 
@@ -72,6 +75,15 @@ npm run run       # cap run ios   (simulator / attached device)
 
 Distribute via **TestFlight** (internal testers, no App Store review) or export a
 signed **ad-hoc IPA** (Product → Archive → Distribute App → Ad Hoc).
+
+## CI
+
+`.github/workflows/ios.yml` (`macos-latest`): `npm ci` → `npx cap add ios` →
+`npx cap sync ios` → `pod install` → unsigned `xcodebuild`. Green means the shell
+and the `autoedit-native` Swift compile; it uploads the unsigned `App.app` as an
+artifact. It does **not** produce an installable IPA — that needs Apple signing
+secrets (`APPLE_CERT_P12_BASE64`, `APPLE_CERT_PASSWORD`,
+`APPLE_PROVISIONING_PROFILE_BASE64`) + `xcodebuild -exportArchive`.
 
 ## How auth works in the shell
 

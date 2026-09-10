@@ -1,0 +1,63 @@
+name: Build iOS
+
+# Compile-check the Capacitor shell + the local `autoedit-native` plugin on a
+# macOS runner (the dev machine is Windows). Unsigned build — proves the Swift
+# compiles; producing an installable IPA needs signing secrets (see
+# apps/mobile/README.md / plan Phase 5c).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/mobile/**"
+      - ".github/workflows/ios.yml"
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Add iOS platform
+        run: npx cap add ios
+
+      - name: Sync Capacitor (links autoedit-native via CocoaPods)
+        run: npx cap sync ios
+
+      - name: pod install
+        working-directory: apps/mobile/ios/App
+        run: pod install
+
+      - name: Compile (unsigned)
+        working-directory: apps/mobile/ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Upload unsigned .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoEditAI-unsigned-app
+          path: apps/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app
+          if-no-files-found: error

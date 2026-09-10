@@ -1,8 +1,7 @@
 node_modules/
-package-lock.json
 
 # Capacitor-generated native project (regenerate with `npm run add:ios`).
-# Keep it out of git; the only checked-in native source is ios-glue/.
+# Keep it out of git; the checked-in native source is local-plugins/.
 ios/
 
 .DS_Store
