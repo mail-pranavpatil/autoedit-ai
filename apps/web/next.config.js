@@ -4,7 +4,11 @@
 // (/api/*, /health) and Next proxies to the FastAPI service below. Keeps the
 // autoedit_session cookie same-site (required for the iOS WebView shell and for
 // any cross-host deploy where *.onrender.com is a public suffix).
-const API_PROXY_ORIGIN = process.env.API_PROXY_ORIGIN || "http://localhost:8000";
+// Render's `fromService: hostport` yields a scheme-less "host:port" — add http://.
+const RAW_API_PROXY_ORIGIN = process.env.API_PROXY_ORIGIN || "http://localhost:8000";
+const API_PROXY_ORIGIN = /^https?:\/\//.test(RAW_API_PROXY_ORIGIN)
+  ? RAW_API_PROXY_ORIGIN
+  : `http://${RAW_API_PROXY_ORIGIN}`;
 
 const nextConfig = {
   output: "standalone",

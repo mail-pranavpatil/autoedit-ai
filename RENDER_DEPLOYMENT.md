@@ -87,12 +87,52 @@ cookie to be **same-site**. Serve everything behind one hostname:
 ### Durable storage without object storage (single-user)
 
 Render disks attach to one service, so the multi-service split above can't share
-rendered files without S3/GCS/R2. For single-user / low volume, collapse
-`autoedit-api` + `autoedit-worker` + `autoedit-youtube-worker` into **one Render
-service** (uvicorn + `celery worker` + youtube queue via a process manager) with
-**one persistent disk** at `/data`; set `STORAGE_DIR=/data/storage`,
-`ASSETS_DIR=/data/assets`. Split the workers back out and wire object storage
-when render throughput or multi-instance forces it.
+rendered files without S3/GCS/R2. So the API and the Celery worker run in **one
+container** (`docker/start-combined.sh`) sharing **one persistent disk** at
+`/data` (`STORAGE_DIR=/data/storage`, `ASSETS_DIR=/data/assets`). Split them back
+out and wire object storage when render throughput or multi-instance forces it.
+
+---
+
+## Deploy via `render.yaml` (Blueprint)
+
+`render.yaml` defines exactly this: managed Postgres + Redis, `autoedit`
+(FastAPI + Celery, with the disk), `autoedit-web` (Next.js proxy).
+
+1. **Fork/repo on GitHub** connected to your Render account.
+2. Render Dashboard → **New** → **Blueprint** → pick the repo → Render reads
+   `render.yaml` → **Apply**. It creates all four resources.
+   - If the validator rejects `type: redis`, change it to `type: keyvalue`.
+   - The persistent disk needs the API service on a **paid** instance
+     (`starter`, ~$7/mo). To stay free: delete the `disk:` block and set
+     `STORAGE_DIR=/tmp/storage` — finished reels are then lost on every
+     restart/redeploy (DB rows survive; a re-render re-fetches source + B-roll).
+3. First deploy will be **unhealthy** until you fill the `sync: false` vars:
+   Dashboard → `autoedit` → Environment →
+   | Key | Value |
+   |---|---|
+   | `TOKEN_ENCRYPTION_KEY` | `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"` |
+   | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | from Google Cloud console OAuth client |
+   | `GOOGLE_REDIRECT_URI` | `https://<autoedit-web URL>/api/auth/callback` |
+   | `FRONTEND_URL` | `https://<autoedit-web URL>` |
+   | `OPENAI_API_KEY`, `PEXELS_API_KEY`, `APIFY_API_TOKEN` | your keys |
+4. Google Cloud console → the OAuth client → Authorized redirect URIs, add:
+   `https://<autoedit-web URL>/api/auth/callback` **and** `autoedit://auth/callback`.
+5. **Manual Deploy** → *Clear build cache & deploy* on `autoedit`, then
+   `autoedit-web`.
+6. Verify: `curl https://<autoedit-web URL>/health` → `{"api":true,"redis":true,
+   "database":true,"ffmpeg":true}`. Sign in; import a Drive folder; process one
+   clip to `READY`; download the reel.
+
+`render.yaml` auto-wires `DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`
+(generated), and `API_PROXY_ORIGIN` (web → API internal address).
+
+### GitHub Actions credentials
+
+**None.** Render deploys by pulling the connected repo directly — nothing goes in
+`.github/workflows/`. The iOS workflow (`ios.yml`) also needs no secrets: it's an
+unsigned compile check. Secrets only enter the picture for a *signed* iOS build
+(TestFlight / device install) — see the plan's Phase 5c.
 
 ---
 
