@@ -43,17 +43,21 @@ jobs:
         working-directory: apps/mobile/ios/App
         run: pod install
 
-      - name: Verify autoedit-native actually linked
-        working-directory: apps/mobile
+      - name: Verify autoedit-native is in the build
+        working-directory: apps/mobile/ios/App
         run: |
-          test -f local-plugins/autoedit-native/ios/Sources/AutoeditNativePlugin/AutoEditNativePlugin.swift \
-            || { echo "::error::plugin Swift source missing (check .gitignore / commit)"; exit 1; }
-          grep -rq "class AutoEditNativePlugin" ios/App/Pods/ \
-            || { echo "::error::autoedit-native did not compile into Pods — cap sync/podspec broken"; exit 1; }
+          # All Capacitor pods are CocoaPods :path (development) pods — sources
+          # are referenced in place, never copied into Pods/<name>/. So assert
+          # the pod is locked and the Pods project references our Swift file.
+          grep -q "AutoeditNative" Podfile.lock \
+            || { echo "::error::AutoeditNative missing from Podfile.lock — cap did not pick up the local plugin"; exit 1; }
+          grep -q "AutoEditNativePlugin.swift" Pods/Pods.xcodeproj/project.pbxproj \
+            || { echo "::error::AutoEditNativePlugin.swift not referenced by the Pods project — podspec source_files glob is wrong"; exit 1; }
 
       - name: Compile (unsigned)
         working-directory: apps/mobile/ios/App
         run: |
+          set -o pipefail
           xcodebuild \
             -workspace App.xcworkspace \
             -scheme App \
@@ -61,7 +65,9 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            build | tee xcodebuild.log
+          grep -q "BUILD SUCCEEDED" xcodebuild.log \
+            || { echo "::error::xcodebuild did not report BUILD SUCCEEDED"; exit 1; }
 
       - name: Upload unsigned .app
         uses: actions/upload-artifact@v4
