@@ -18,6 +18,10 @@ engine = create_engine(
     max_overflow=2,
     pool_timeout=30,
     pool_recycle=1800,
+    # A wedged transaction (lock contention, stuck autovacuum) can otherwise
+    # hang a commit forever with no exception raised — a video parked at
+    # RENDERING/97% for hours with nothing in the logs.
+    connect_args={"options": "-c statement_timeout=30000"},
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
