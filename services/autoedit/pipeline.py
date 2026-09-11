@@ -230,9 +230,13 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
 
     tx_row = db.query(Transcript).filter(Transcript.video_id == video.id).first()
     if not tx_row:
-        bump("TRANSCRIBING", "Transcribing speech")
+        bump("TRANSCRIBING", "Extracting audio track…")
         audio = ws / "audio.wav"
         extract_audio(str(source), str(audio))
+        # Nudge progress so the bar visibly moves before the long Whisper API call
+        video.progress = 32
+        db.commit()
+        bump("TRANSCRIBING", "Listening to the talking-head audio and writing a timestamped transcript…")
         result = get_transcription_provider().transcribe(str(audio))
         tx_row = Transcript(
             video_id=video.id,
@@ -245,7 +249,7 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         db.add(tx_row)
         (ws / "transcript.json").write_text(json.dumps(result, indent=2))
         db.commit()
-    bump("TRANSCRIBED", "Transcribed")
+    bump("TRANSCRIBED", "Transcript is ready.")
 
     # Plan
     latest_plan = (

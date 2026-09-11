@@ -8,9 +8,9 @@ const STAGE_CEILING: Record<string, number> = {
   QUEUED: 9,
   DOWNLOADING: 28,
   DOWNLOADED: 28,
-  PROBING: 29,
-  TRANSCRIBING: 39,
-  TRANSCRIBED: 39,
+  PROBING: 27,
+  TRANSCRIBING: 42,   // Whisper can take 30-90s; give the bar room to creep visibly
+  TRANSCRIBED: 42,
   PLANNING: 54,
   PLAN_READY: 54,
   SEARCHING_BROLL: 90,
