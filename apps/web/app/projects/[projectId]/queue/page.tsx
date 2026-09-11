@@ -85,9 +85,27 @@ export default function QueuePage() {
                   <SmoothPercent progress={v.progress || 0} status={v.status} />
                 </td>
                 <td className="p-3">
-                  <button className="text-accent" onClick={() => setDrawer(v)}>
-                    Details
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button className="text-accent" onClick={() => setDrawer(v)}>
+                      Details
+                    </button>
+                    {isProcessingStatus(v.status) && (
+                      <button
+                        className="text-red-300"
+                        onClick={async () => {
+                          try {
+                            await api(`/api/videos/${v.id}/cancel`, { method: "POST" });
+                            toast("Stopped");
+                            load();
+                          } catch (e) {
+                            toast((e as Error).message, "err");
+                          }
+                        }}
+                      >
+                        Stop
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

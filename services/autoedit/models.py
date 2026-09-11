@@ -106,6 +106,7 @@ class Video(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     failed_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    celery_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

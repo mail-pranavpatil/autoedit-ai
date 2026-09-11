@@ -120,7 +120,7 @@ export default function ProjectDetailPage() {
 
 function VideoCard({ video, projectId }: { video: Video; projectId: string }) {
   return (
-    <Link href={`/projects/${projectId}/videos/${video.id}`} className="overflow-hidden rounded-2xl border border-line bg-panel">
+    <Link href={`/projects/${projectId}/videos/${video.id}`} className="relative block overflow-hidden rounded-2xl border border-line bg-panel">
       <div className="aspect-[9/16] max-h-64 bg-black">
         {video.thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -129,6 +129,23 @@ function VideoCard({ video, projectId }: { video: Video; projectId: string }) {
           <div className="flex h-full items-center justify-center text-muted">No thumbnail yet</div>
         )}
       </div>
+      {isProcessingStatus(video.status) && (
+        <button
+          className="absolute right-2 top-2 rounded-full bg-black/70 px-3 py-1 text-xs text-red-300 hover:bg-black/90"
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              await api(`/api/videos/${video.id}/cancel`, { method: "POST" });
+              toast("Stopped");
+            } catch (err) {
+              toast((err as Error).message, "err");
+            }
+          }}
+        >
+          Stop
+        </button>
+      )}
       <div className="p-3">
         <div className="truncate text-sm font-medium">{video.filename}</div>
         <div className="mt-2 flex items-center justify-between text-xs text-muted">

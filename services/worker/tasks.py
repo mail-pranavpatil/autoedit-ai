@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
 
 from celery.signals import task_failure
 from sqlalchemy.orm import joinedload
@@ -12,8 +11,8 @@ from fastapi import HTTPException
 from autoedit.auth import get_valid_access_token
 from autoedit.db import SessionLocal
 from autoedit.logging_setup import setup_logging
-from autoedit.models import RenderJob, User, Video
-from autoedit.pipeline import fail, process_video, render_video
+from autoedit.models import User, Video
+from autoedit.pipeline import abort_video, process_video, render_video
 from worker.celery_app import celery_app
 
 setup_logging()
@@ -43,19 +42,7 @@ def _mark_video_failed_on_worker_loss(sender=None, task_id=None, exception=None,
         video = db.query(Video).filter(Video.id == uuid.UUID(str(video_id))).first()
         if not video or video.status in {"FAILED", "READY"}:
             return
-        db.rollback()
-        fail(db, video, video.status or video.current_stage or "UNKNOWN", exception or RuntimeError("worker process lost"))
-        job = (
-            db.query(RenderJob)
-            .filter(RenderJob.video_id == video.id)
-            .order_by(RenderJob.created_at.desc())
-            .first()
-        )
-        if job and job.status not in {"FAILED", "READY"}:
-            job.status = "FAILED"
-            job.error_message = str(exception or "worker process lost")[-4000:]
-            job.completed_at = datetime.utcnow()
-            db.commit()
+        abort_video(db, video, str(exception or "worker process lost"))
         logger.error("Marked video %s FAILED after worker loss (task %s)", video_id, task_id)
     finally:
         db.close()

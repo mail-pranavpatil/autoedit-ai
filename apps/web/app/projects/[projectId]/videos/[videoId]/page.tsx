@@ -164,7 +164,23 @@ export default function VideoDetailPage() {
             </Button>
           )}
           {processing && (
-            <p className="text-sm text-muted">You can leave this page. Processing continues in the background.</p>
+            <>
+              <p className="text-sm text-muted">You can leave this page. Processing continues in the background.</p>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  try {
+                    const next = await api<Video>(`/api/videos/${video.id}/cancel`, { method: "POST" });
+                    setVideo(next);
+                    toast("Stopped");
+                  } catch (e) {
+                    toast((e as Error).message, "err");
+                  }
+                }}
+              >
+                Stop
+              </Button>
+            </>
           )}
           {video.status === "READY" && (
             <>

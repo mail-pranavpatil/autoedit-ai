@@ -72,8 +72,9 @@ def process_one(video_id: uuid.UUID, user: User = Depends(get_current_user), db:
     video.current_stage = "Queued"
     video.progress = 1
     video.updated_at = datetime.utcnow()
+    result = process_video_task.delay(str(video.id))
+    video.celery_task_id = result.id
     db.commit()
-    process_video_task.delay(str(video.id))
     return serialize_video(video)
 
 
@@ -86,8 +87,41 @@ def retry_one(video_id: uuid.UUID, user: User = Depends(get_current_user), db: S
     video.status = "QUEUED"
     video.error_message = None
     video.updated_at = datetime.utcnow()
+    result = process_video_task.delay(str(video.id))
+    video.celery_task_id = result.id
     db.commit()
-    process_video_task.delay(str(video.id))
+    return serialize_video(video)
+
+
+@router.post("/cancel-all")
+def cancel_all_processing(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from worker.celery_app import celery_app
+    from autoedit.pipeline import abort_video
+
+    videos = (
+        db.query(Video)
+        .join(Project)
+        .filter(Project.user_id == user.id, Video.status.notin_(["READY", "FAILED", "DISCOVERED"]))
+        .all()
+    )
+    for video in videos:
+        if video.celery_task_id:
+            celery_app.control.revoke(video.celery_task_id, terminate=True, signal="SIGKILL")
+        abort_video(db, video, "Cancelled by user (stop all)")
+    return {"cancelled": len(videos)}
+
+
+@router.post("/{video_id}/cancel")
+def cancel_video(video_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from worker.celery_app import celery_app
+    from autoedit.pipeline import abort_video
+
+    video = _owned_video(db, user, video_id)
+    if video.status in {"READY", "FAILED", "DISCOVERED"}:
+        raise HTTPException(400, "Video is not processing")
+    if video.celery_task_id:
+        celery_app.control.revoke(video.celery_task_id, terminate=True, signal="SIGKILL")
+    abort_video(db, video, "Cancelled by user")
     return serialize_video(video)
 
 
@@ -312,6 +346,8 @@ def render_from_editor(
     video.current_stage = "Queued render"
     video.progress = 1
     video.updated_at = datetime.utcnow()
+    result = render_video_task.delay(str(video.id), plan_json=dumped)
+    video.celery_task_id = result.id
     db.commit()
     logger.info(
         "Queue render %s plan v%s caption_style=%s",
@@ -319,5 +355,4 @@ def render_from_editor(
         version,
         dumped.get("caption_style", {}).get("preset"),
     )
-    render_video_task.delay(str(video.id), plan_json=dumped)
     return serialize_video(video)

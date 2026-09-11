@@ -147,7 +147,8 @@ def process_all(project_id: uuid.UUID, user: User = Depends(get_current_user), d
         video.current_stage = "Queued"
         video.progress = 1
         video.updated_at = datetime.utcnow()
-        process_video_task.delay(str(video.id))
+        result = process_video_task.delay(str(video.id))
+        video.celery_task_id = result.id
         queued += 1
     db.commit()
     return {"queued": queued}
@@ -172,7 +173,8 @@ def retry_failed(project_id: uuid.UUID, user: User = Depends(get_current_user), 
         video.retry_count += 1
         video.status = "QUEUED"
         video.error_message = None
-        process_video_task.delay(str(video.id))
+        result = process_video_task.delay(str(video.id))
+        video.celery_task_id = result.id
         n += 1
     db.commit()
     return {"queued": n}

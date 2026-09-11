@@ -93,6 +93,23 @@ def fail(db: Session, video: Video, stage: str, exc: Exception) -> None:
     db.commit()
 
 
+def abort_video(db: Session, video: Video, reason: str) -> None:
+    """Mark a video (and its latest RenderJob) FAILED outside the normal
+    per-stage except-handlers: the worker process being lost (OOM, or a
+    deliberate revoke+terminate), or a user-initiated cancel.
+    """
+    db.rollback()
+    fail(db, video, video.status or video.current_stage or "UNKNOWN", RuntimeError(reason))
+    job = (
+        db.query(RenderJob).filter(RenderJob.video_id == video.id).order_by(RenderJob.created_at.desc()).first()
+    )
+    if job and job.status not in {"FAILED", "READY"}:
+        job.status = "FAILED"
+        job.error_message = reason[:4000]
+        job.completed_at = datetime.utcnow()
+        db.commit()
+
+
 def get_style(db: Session, user_id) -> dict:
     row = db.query(StyleProfile).filter(StyleProfile.user_id == user_id).first()
     merged = merge_style_profile(row.profile_json if row else None)

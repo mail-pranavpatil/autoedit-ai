@@ -6,11 +6,13 @@ import { api, type Project } from "@/lib/api";
 import { Button } from "@/components/common/Button";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/common/EmptyState";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
+import { toast } from "@/components/common/Toast";
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   async function load() {
     try {
@@ -44,7 +46,29 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-semibold">Dashboard</h1>
           <p className="text-sm text-muted">Import videos. Process. Download finished reels.</p>
         </div>
-        <Button onClick={() => setOpen(true)}>New Project</Button>
+        <div className="flex gap-2">
+          {totals.processing > 0 && (
+            <Button
+              variant="danger"
+              disabled={stopping}
+              onClick={async () => {
+                setStopping(true);
+                try {
+                  const r = await api<{ cancelled: number }>("/api/videos/cancel-all", { method: "POST" });
+                  toast(`Stopped ${r.cancelled} processing video${r.cancelled === 1 ? "" : "s"}`);
+                  load();
+                } catch (e) {
+                  toast((e as Error).message, "err");
+                } finally {
+                  setStopping(false);
+                }
+              }}
+            >
+              {stopping ? "Stopping…" : "Stop all processing"}
+            </Button>
+          )}
+          <Button onClick={() => setOpen(true)}>New Project</Button>
+        </div>
       </div>
       <div className="mt-6 grid gap-3 sm:grid-cols-4">
         {[
