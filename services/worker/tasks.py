@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
 
+from celery.signals import task_failure
 from sqlalchemy.orm import joinedload
 
 from fastapi import HTTPException
@@ -10,12 +12,53 @@ from fastapi import HTTPException
 from autoedit.auth import get_valid_access_token
 from autoedit.db import SessionLocal
 from autoedit.logging_setup import setup_logging
-from autoedit.models import User, Video
-from autoedit.pipeline import process_video, render_video
+from autoedit.models import RenderJob, User, Video
+from autoedit.pipeline import fail, process_video, render_video
 from worker.celery_app import celery_app
 
 setup_logging()
 logger = logging.getLogger("autoedit")
+
+_RECOVERABLE_TASKS = {"worker.process_video", "worker.render_video"}
+
+
+@task_failure.connect
+def _mark_video_failed_on_worker_loss(sender=None, task_id=None, exception=None, args=None, kwargs=None, **_kw):
+    """Safety net for OOM/SIGKILL: if the celery worker process itself dies mid-task
+    (not just an ffmpeg subprocess it spawned), nothing inside process_video/
+    render_video survives to run their own except-block cleanup - the video row
+    just stays parked at whatever stage was last committed, forever. With
+    task_reject_on_worker_lost left at its default (False), Celery treats a lost
+    worker as a task failure and fires this signal from the surviving master
+    process, so we can mark the video FAILED from here instead.
+    """
+    name = getattr(sender, "name", "") or ""
+    if name not in _RECOVERABLE_TASKS:
+        return
+    video_id = (args[0] if args else None) or (kwargs or {}).get("video_id")
+    if not video_id:
+        return
+    db = SessionLocal()
+    try:
+        video = db.query(Video).filter(Video.id == uuid.UUID(str(video_id))).first()
+        if not video or video.status in {"FAILED", "READY"}:
+            return
+        db.rollback()
+        fail(db, video, video.status or video.current_stage or "UNKNOWN", exception or RuntimeError("worker process lost"))
+        job = (
+            db.query(RenderJob)
+            .filter(RenderJob.video_id == video.id)
+            .order_by(RenderJob.created_at.desc())
+            .first()
+        )
+        if job and job.status not in {"FAILED", "READY"}:
+            job.status = "FAILED"
+            job.error_message = str(exception or "worker process lost")[-4000:]
+            job.completed_at = datetime.utcnow()
+            db.commit()
+        logger.error("Marked video %s FAILED after worker loss (task %s)", video_id, task_id)
+    finally:
+        db.close()
 
 
 @celery_app.task(name="worker.ping")

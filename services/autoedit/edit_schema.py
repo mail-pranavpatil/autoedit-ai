@@ -38,6 +38,11 @@ SfxKind = Literal["accent", "transition", "riser", "combo"]
 # Dense per-phrase image B-roll needs one asset per spoken phrase; a safety
 # slice, not a design target. ~120 covers a 3-minute reel at phrase density.
 MAX_VISUAL_ASSETS = 120
+# Image B-roll is pre-rendered into a single track (compose.write_broll_track)
+# so it costs one extra decoder regardless of count. Video B-roll isn't - each
+# one becomes its own concurrent ffmpeg input in the final filter_complex, and
+# too many of those OOM-kills the ~512MB starter instance. Cap those separately.
+MAX_CONCURRENT_BROLL_DECODERS = 8
 DISALLOWED_QUERY_TOKS = (";", "&&", "|", "`", "$(", "../")
 
 ALLOWED_EFFECTS = set(Effect.__args__)  # type: ignore[attr-defined]

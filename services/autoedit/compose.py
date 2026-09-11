@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from autoedit.config import get_settings
-from autoedit.edit_schema import DEFAULT_STYLE_PROFILE, EditPlan, MAX_VISUAL_ASSETS
+from autoedit.edit_schema import DEFAULT_STYLE_PROFILE, MAX_CONCURRENT_BROLL_DECODERS, EditPlan, MAX_VISUAL_ASSETS
 from autoedit.media import probe_media, run_ffmpeg
 
 logger = logging.getLogger("autoedit")
@@ -210,9 +210,18 @@ def compose_final(
     # Dense image B-roll is pre-composited into one track (broll_track_path); only
     # the remaining video B-roll goes through the per-asset overlay loop here.
     track_is_used = bool(broll_track_path and broll_track_windows)
+    decoder_inputs = 0
     for start, end, path, asset_type in (broll_paths or [])[:MAX_VISUAL_ASSETS]:
         if track_is_used and asset_type == "image":
             continue
+        if decoder_inputs >= MAX_CONCURRENT_BROLL_DECODERS:
+            logger.warning(
+                "Dropping B-roll asset %s: hit MAX_CONCURRENT_BROLL_DECODERS=%d (OOM guard)",
+                path,
+                MAX_CONCURRENT_BROLL_DECODERS,
+            )
+            continue
+        decoder_inputs += 1
         safe = _safe_path(path, roots + [Path(path).resolve().parent])
         seg_dur = max(0.6, end - start)
         if asset_type == "image":
