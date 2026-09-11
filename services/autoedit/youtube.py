@@ -199,6 +199,7 @@ def publish_video_to_youtube(db: Session, video_id: str, *, force: bool = False)
         return "ok"
     except Exception as exc:
         logger.exception("YouTube publish failed for %s", video.id)
+        db.rollback()
         row = db.query(YoutubeUpload).filter(YoutubeUpload.video_id == video.id).first()
         if row:
             row.status = "FAILED"

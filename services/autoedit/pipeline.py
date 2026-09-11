@@ -59,9 +59,12 @@ logger = logging.getLogger("autoedit")
 SUPPORTED = {".mp4", ".mov", ".m4v", ".webm"}
 
 
+STAGE_COL_MAX = 64
+
+
 def _set_status(db: Session, video: Video, status: str, stage: str | None = None) -> None:
     video.status = status
-    video.current_stage = stage or status
+    video.current_stage = (stage or status)[:STAGE_COL_MAX]
     video.progress = STAGE_PROGRESS.get(status, video.progress)
     video.updated_at = datetime.utcnow()
     if status != "FAILED":
@@ -73,8 +76,8 @@ def _set_status(db: Session, video: Video, status: str, stage: str | None = None
 def fail(db: Session, video: Video, stage: str, exc: Exception) -> None:
     logger.exception("Video %s failed at %s", video.id, stage)
     video.status = "FAILED"
-    video.failed_stage = stage
-    video.current_stage = stage
+    video.failed_stage = stage[:STAGE_COL_MAX]
+    video.current_stage = stage[:STAGE_COL_MAX]
     video.error_message = f"{stage}: {exc}"
     video.updated_at = datetime.utcnow()
     db.commit()
@@ -159,6 +162,7 @@ def process_video(db: Session, video_id: str, access_token: str | None = None) -
     try:
         _pipeline(db, video, job, ws, access_token, allowed)
     except Exception as exc:
+        db.rollback()
         fail(db, video, video.status or video.current_stage or "UNKNOWN", exc)
         job.status = "FAILED"
         job.error_message = traceback.format_exc()[-4000:]
@@ -174,7 +178,7 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
     def bump(status: str, stage: str) -> None:
         _set_status(db, video, status, stage)
         job.status = status
-        job.current_stage = stage
+        job.current_stage = stage[:STAGE_COL_MAX]
         job.progress = video.progress
         db.commit()
 
@@ -389,7 +393,7 @@ def render_video(db: Session, video_id: str, plan_json: dict | None = None) -> N
         def bump(status: str, stage: str) -> None:
             _set_status(db, video, status, stage)
             job.status = status
-            job.current_stage = stage
+            job.current_stage = stage[:STAGE_COL_MAX]
             job.progress = video.progress
             db.commit()
 
@@ -447,6 +451,7 @@ def render_video(db: Session, video_id: str, plan_json: dict | None = None) -> N
             tx_row,
         )
     except Exception as exc:
+        db.rollback()
         fail(db, video, video.status or video.current_stage or "RENDERING", exc)
         job.status = "FAILED"
         job.error_message = traceback.format_exc()[-4000:]
