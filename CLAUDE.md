@@ -136,13 +136,21 @@ still being stabilised. **The working tree is mid-refactor; nothing since
 - Dense B-roll not yet committed or run at batch scale; `_collect_broll` does one
   Apify run + **serial** downloads per video — flagged in a `ponytail:` comment as
   the wall-time bottleneck for reels with many phrases.
-- **Object storage not wired.** Storage is local `./storage` (`storage/broll-cache/`
-  already has cached assets committed). `RENDER_DEPLOYMENT.md` says durable object
-  storage (S3/GCS/R2) is required for real deploys — still TODO.
+- **Object storage wired (2026-09-12).** `services/autoedit/object_storage.py`
+  ships a dual-mode `local`/`r2` backend (`STORAGE_BACKEND` env var, default
+  `local`) — Cloudflare R2 in production, unchanged local-disk behavior for
+  dev. `storage/broll-cache/` is local-only (gitignored, not actually
+  committed despite what this doc used to say) and is now a pure ephemeral
+  L1 cache on the worker; R2 is the source of truth. Videos processed before
+  this shipped keep local-disk paths and aren't downloadable post-cutover —
+  no data migration was run.
 - Auth is minimal (Google OAuth sign-in only, single-user assumptions in places).
 - No billing / multi-tenancy / rate limiting (explicitly out of MVP).
-- Deploy target is Render as 4 services (web, api, worker, youtube-worker) +
-  managed Postgres + Redis. Not confirmed live end-to-end there.
+- Deploy target is Render as 3 services (`autoedit-web`, `autoedit-api`,
+  `autoedit-worker`, `render.yaml`) + managed Postgres + Redis — API and
+  worker split, each with its own disk-free container. YouTube publishing
+  still shares the main worker via a separate Celery queue rather than its
+  own 4th service.
 
 ---
 

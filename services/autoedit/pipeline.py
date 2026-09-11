@@ -32,6 +32,7 @@ from autoedit.edit_schema import (
 from autoedit.image_ranking import rank_candidates
 from autoedit.mentions import enforce_visual_cadence
 from autoedit.music import MUSIC_IDS, choose_track
+from autoedit.object_storage import ensure_local, object_exists, save_output
 from autoedit.media import (
     extract_audio,
     extract_thumbnail,
@@ -210,7 +211,12 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         db.commit()
 
     # Download
-    source = Path(video.local_path) if video.local_path else ws / "source.mp4"
+    source = ws / "source.mp4"
+    if video.local_path:
+        try:
+            source = ensure_local(video.local_path, source)
+        except Exception:  # noqa: BLE001 - stored copy unreachable, fall through to re-download
+            source = ws / "source.mp4"
     if not source.exists():
         bump("DOWNLOADING", "Downloading source")
         if video.external_file_id:
@@ -221,7 +227,7 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
             download_url(video.source_url, source)
         else:
             raise RuntimeError("No source file id or url")
-        video.local_path = str(source)
+        video.local_path = save_output(str(source), f"videos/{video.id}/source.mp4")
         db.commit()
     bump("DOWNLOADED", "Downloaded")
 
@@ -240,7 +246,7 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         thumb = ws / "thumb.jpg"
         try:
             extract_thumbnail(str(source), str(thumb))
-            video.thumbnail_path = str(thumb)
+            video.thumbnail_path = save_output(str(thumb), f"videos/{video.id}/thumb.jpg", content_type="image/jpeg")
         except Exception:
             logger.warning("Thumbnail failed for %s", video.id)
         db.commit()
@@ -424,7 +430,12 @@ def render_video(db: Session, video_id: str, plan_json: dict | None = None) -> N
             job.progress = video.progress
             db.commit()
 
-        source = Path(video.local_path) if video.local_path else ws / "source.mp4"
+        source = ws / "source.mp4"
+        if video.local_path:
+            try:
+                source = ensure_local(video.local_path, source)
+            except Exception:  # noqa: BLE001 - stored copy unreachable
+                source = ws / "source.mp4"
         if not source.exists():
             raise RuntimeError("Source file missing; run a full process first")
         if plan_json:
@@ -489,16 +500,21 @@ def render_video(db: Session, video_id: str, plan_json: dict | None = None) -> N
 def _broll_from_existing(video: Video, plan: EditPlan) -> list[tuple[float, float, str, str]]:
     unused = list(video.broll_assets or [])
     paths: list[tuple[float, float, str, str]] = []
+    cache_dir = get_settings().storage_dir / "broll-cache"
     for seg in plan.segments:
         if seg.visual != "broll" or not seg.broll_query:
             continue
         match = next((a for a in unused if a.query == seg.broll_query and a.local_path), None)
         if not match:
             match = next((a for a in unused if a.local_path), None)
-        if not match or not Path(match.local_path).exists():
+        if not match or not object_exists(match.local_path):
+            continue
+        try:
+            local = ensure_local(match.local_path, cache_dir / Path(match.local_path).name)
+        except Exception:  # noqa: BLE001 - stored copy unreachable, skip this asset
             continue
         unused.remove(match)
-        paths.append((seg.start, seg.end, match.local_path, match.asset_type or "video"))
+        paths.append((seg.start, seg.end, str(local), match.asset_type or "video"))
     return paths[:MAX_VISUAL_ASSETS]
 
 
@@ -529,7 +545,7 @@ def _collect_broll(
 
     def _cached(key: str):
         row = db.query(AssetCache).filter(AssetCache.cache_key == key).first()
-        if row and row.local_path and Path(row.local_path).exists():
+        if row and row.local_path and object_exists(row.local_path):
             return row
         return None
 
@@ -556,12 +572,17 @@ def _collect_broll(
         provider = "apify" if want == "image" else "pexels"
         cache_key = f"{provider}:{want}:{q}"
         cached = _cached(cache_key)
-        local = external_id = source_url = pick_meta = None
+        local = stored = external_id = source_url = pick_meta = None
         asset_type = want
         license_info = "web:google-images" if want == "image" else "Pexels"
 
         if cached:
-            local = cached.local_path
+            stored = cached.local_path
+            try:
+                local = str(ensure_local(stored, cache_dir / Path(stored).name))
+            except Exception:  # noqa: BLE001 - cached copy unreachable, re-fetch below
+                cached = None
+        if cached:
             asset_type = (cached.payload_json or {}).get("asset_type", want)
             pick_meta = (cached.payload_json or {}).get("metadata")
             external_id = (cached.payload_json or {}).get("external_id")
@@ -599,7 +620,8 @@ def _collect_broll(
                 continue
             asset_type = "image"
             external_id, source_url, pick_meta = pick.get("external_id"), pick["url"], pick.get("metadata")
-            _remember_asset(db, cache_key, provider, pick, local)
+            stored = save_output(local, f"broll-cache/{Path(local).name}")
+            _remember_asset(db, cache_key, provider, pick, stored)
         else:  # video -> Pexels, unchanged behaviour
             results = pexels.search(seg.broll_query, "video", "portrait")
             if not results:
@@ -618,7 +640,8 @@ def _collect_broll(
             if not dest.exists():
                 download_url(source_url, dest)
             local = str(dest)
-            _remember_asset(db, f"pexels:{asset_type}:{q}", "pexels", pick, local)
+            stored = save_output(local, f"broll-cache/{dest.name}")
+            _remember_asset(db, f"pexels:{asset_type}:{q}", "pexels", pick, stored)
 
         db.add(
             BrollAsset(
@@ -628,7 +651,7 @@ def _collect_broll(
                 asset_type=asset_type,
                 query=seg.broll_query,
                 source_url=source_url,
-                local_path=local,
+                local_path=stored,
                 license_info=license_info,
                 metadata_json=pick_meta if (pick_meta and "jina_score" in pick_meta) else None,
             )
@@ -726,7 +749,7 @@ def _render_stage(
 
     bump("VALIDATING", "Validating output")
     validate_output(str(output), expect_audio=True)
-    job.output_path = str(output)
+    job.output_path = save_output(str(output), f"videos/{video.id}/final.mp4", content_type="video/mp4")
     job.status = "READY"
     job.progress = 100
     job.completed_at = datetime.utcnow()

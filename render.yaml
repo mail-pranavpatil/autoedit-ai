@@ -1,17 +1,29 @@
-# Render Blueprint — AutoEdit AI (single-origin, combined API+worker).
+# Render Blueprint — AutoEdit AI (split API/worker, R2 object storage).
 #
-# Review it in Render's Blueprint preview before "Apply". Two services:
-#   autoedit      — FastAPI + Celery worker in ONE container (shared filesystem;
-#                   see docker/start-combined.sh). Owns the persistent disk.
-#   autoedit-web  — Next.js. Proxies /api/* and /health to `autoedit` so the
-#                   browser only ever talks to one origin (same-site cookie).
+# Review it in Render's Blueprint preview before "Apply". Three services:
+#   autoedit-api     — FastAPI only. No disk; media reads/writes go through
+#                      services/autoedit/object_storage.py to R2 (or presign
+#                      redirects). Owns DB migrations (preDeployCommand).
+#   autoedit-worker  — Celery worker only (process_video/render_video/youtube
+#                      publish). Sized independently of the API so a big
+#                      source video's render can't take the API down with it.
+#                      No disk either - local /data/storage is now a pure
+#                      ephemeral L1 cache; R2 is the durable copy.
+#   autoedit-web     — Next.js. Proxies /api/* and /health to autoedit-api so
+#                      the browser only ever talks to one origin (same-site
+#                      cookie).
+#
+# Previously this was two services (autoedit combined API+worker, autoedit-web)
+# sharing one Render Disk - see git history / RENDER_DEPLOYMENT.md for why,
+# and why that stopped being enough once source videos hit 400-600MB.
 #
 # Managed Postgres + Redis are declared below. If Render's validator rejects
 # `type: redis`, rename it to `type: keyvalue` (same thing, newer name).
 #
 # The `sync: false` vars have no value here on purpose — set them in the Render
 # dashboard after the first deploy (secrets + the two URLs you only learn once
-# the web service exists). See RENDER_DEPLOYMENT.md.
+# the web service exists), plus the new R2 credentials below. See
+# RENDER_DEPLOYMENT.md.
 
 databases:
   - name: autoedit-db
@@ -27,29 +39,20 @@ services:
     maxmemoryPolicy: noeviction   # Celery broker must not evict
 
   - type: web
-    name: autoedit
+    name: autoedit-api
     runtime: docker
     dockerfilePath: ./docker/Dockerfile.api
     dockerContext: .
-    plan: starter          # a persistent disk requires a paid instance
+    plan: starter
     healthCheckPath: /health
     preDeployCommand: "alembic upgrade head"
-    dockerCommand: "bash /app/start-combined.sh"   # docker runtime uses dockerCommand, not startCommand
-    disk:
-      name: autoedit-data
-      mountPath: /data
-      sizeGB: 5
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: STORAGE_DIR
-        value: /data/storage
+        value: /data/storage   # ephemeral scratch only now (asset-upload temp files) - no disk attached
       - key: ASSETS_DIR
         value: /data/assets
-      - key: WORKER_CONCURRENCY
-        value: "1"           # starter plan ≈ 512 MB; 1 render at a time prevents OOM SIGKILL 9
-      - key: RENDER_FFMPEG_THREADS
-        value: "1"
       - key: COOKIE_SECURE
         value: "true"
       - key: IOS_REDIRECT_SCHEME
@@ -58,13 +61,15 @@ services:
         fromDatabase:
           name: autoedit-db
           property: connectionString
-      - key: REDIS_URL
+      - key: REDIS_URL     # needed for celery_app.control.revoke (cancel endpoints)
         fromService:
           type: redis
           name: autoedit-redis
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
+      - key: STORAGE_BACKEND
+        value: r2
       # --- set these in the dashboard after the first deploy ---
       - key: FRONTEND_URL          # https://<your autoedit-web URL>
         sync: false
@@ -76,11 +81,65 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ENDPOINT            # https://<account id>.r2.cloudflarestorage.com
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+
+  - type: worker
+    name: autoedit-worker
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile.worker
+    dockerContext: .
+    plan: standard          # 1 CPU / 2GB - bump/shrink using the RSS-per-stage
+                             # worker logs (pipeline._set_status) to size it for real
+    dockerCommand: "celery -A worker.celery_app worker --loglevel=info -Q celery,youtube --concurrency=${WORKER_CONCURRENCY:-1}"
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: STORAGE_DIR
+        value: /data/storage   # ephemeral L1 cache only now - R2 is the durable copy
+      - key: ASSETS_DIR
+        value: /data/assets
+      - key: WORKER_CONCURRENCY
+        value: "1"             # one render at a time; raise only with a bigger plan
+      - key: RENDER_FFMPEG_THREADS
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autoedit-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: autoedit-redis
+          property: connectionString
+      - key: STORAGE_BACKEND
+        value: r2
+      # --- set these in the dashboard after the first deploy ---
+      - key: TOKEN_ENCRYPTION_KEY   # same value as autoedit-api - decrypts Drive OAuth tokens
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: PEXELS_API_KEY
         sync: false
       - key: APIFY_API_TOKEN
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
         sync: false
       # --- optional, have sane defaults in config.py ---
       - key: APIFY_IMAGE_ACTOR
@@ -102,8 +161,8 @@ services:
     envVars:
       - key: NEXT_PUBLIC_API_URL
         value: ""                # same-origin; baked at build time
-      - key: API_PROXY_ORIGIN    # internal host:port of the combined service
+      - key: API_PROXY_ORIGIN    # internal host:port of the API service
         fromService:
           type: web
-          name: autoedit
+          name: autoedit-api
           property: hostport

@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     sfx_debug: bool = False
     sfx_allow_unverified_licenses: bool | None = None
 
+    # "local" (default) keeps every media file on STORAGE_DIR, unchanged from
+    # today - zero setup for local dev. "r2" uploads to Cloudflare R2 (or any
+    # S3-compatible endpoint) instead, so the API and worker no longer need a
+    # shared disk. See services/autoedit/object_storage.py.
+    storage_backend: str = "local"
+    r2_bucket: str = ""
+    r2_endpoint: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+
     # Final render is a single huge filter_complex with ~10 concurrent video
     # decoders. Default frame-threaded decoding allocates threads x ref-frames of
     # full-res buffers per decoder, which OOM-kills memory-capped containers

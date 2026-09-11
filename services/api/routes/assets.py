@@ -10,6 +10,7 @@ from autoedit.auth import get_current_user
 from autoedit.config import get_settings
 from autoedit.db import get_db
 from autoedit.models import LibraryAsset, User
+from autoedit.object_storage import delete_object, save_output, serve_response
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -69,12 +70,15 @@ async def upload_asset(
                 dest.unlink(missing_ok=True)
                 raise HTTPException(400, "File too large")
             out.write(chunk)
+    stored = save_output(str(dest), f"library/{user.id}/{dest.name}")
+    if stored != str(dest):
+        dest.unlink(missing_ok=True)  # uploaded to object storage, drop the local scratch copy
     row = LibraryAsset(
         user_id=user.id,
         name=name.strip() or Path(file.filename or "asset").stem,
         asset_type=assetType,
         category=category,
-        local_path=str(dest.resolve()),
+        local_path=stored,
         enabled=True,
         is_system=False,
     )
@@ -104,24 +108,21 @@ def delete_asset(asset_id: uuid.UUID, user: User = Depends(get_current_user), db
     row = db.query(LibraryAsset).filter(LibraryAsset.id == asset_id, LibraryAsset.user_id == user.id).first()
     if not row:
         raise HTTPException(404, "Asset not found or cannot delete system asset")
-    path = Path(row.local_path)
+    stored = row.local_path
     db.delete(row)
     db.commit()
-    if path.exists() and "uploads" in str(path):
-        path.unlink(missing_ok=True)
+    delete_object(stored)
     return {"ok": True}
 
 
 @router.get("/{asset_id}/preview")
 def preview(asset_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    from fastapi.responses import FileResponse
-
     row = (
         db.query(LibraryAsset)
         .filter(LibraryAsset.id == asset_id)
         .filter((LibraryAsset.user_id == user.id) | (LibraryAsset.is_system.is_(True)))
         .first()
     )
-    if not row or not Path(row.local_path).exists():
+    if not row:
         raise HTTPException(404, "Asset file missing")
-    return FileResponse(row.local_path)
+    return serve_response(row.local_path, force_local=row.is_system)

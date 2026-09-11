@@ -56,7 +56,7 @@ See `.env.example` for a full, annotated list.
 - All secrets and connection strings coming from Render, not source code!
 - Ensure API/worker images can reach ffmpeg in their environment (installed in Dockerfiles).
 - `RENDER_FFMPEG_THREADS` (default `1`) caps ffmpeg decoder/filter/encoder threads on the worker. The final render is one large `filter_complex` with ~10 concurrent video decoders; leaving threads uncapped OOM-kills small instances (job fails with `ffmpeg ... died with <Signals.SIGKILL: 9>`). Raise to `2`–`4` only on worker plans with several GB of RAM.
-- `WORKER_CONCURRENCY` **must be `1`** on the starter plan (~512 MB RAM). Each render spawns multiple sequential ffmpeg processes (B-roll pre-render → concat → final filter_complex); two concurrent workers easily exhaust container memory, causing the kernel OOM killer to SIGKILL any ffmpeg — even trivially light ones like the black-gap generator. The symptom is `gap_f0.mp4 died with <Signals.SIGKILL: 9>` during the `RENDERING` stage. Set `WORKER_CONCURRENCY=2` only when on an instance plan with ≥ 2 GB RAM.
+- `WORKER_CONCURRENCY` **must be `1`** on any worker plan under ~2 GB RAM. Each render spawns multiple sequential ffmpeg processes (B-roll pre-render → concat → final filter_complex); two concurrent renders easily exhaust container memory, causing the kernel OOM killer to SIGKILL any ffmpeg — even trivially light ones like the black-gap generator. The symptom is `gap_f0.mp4 died with <Signals.SIGKILL: 9>` during the `RENDERING` stage. Set `WORKER_CONCURRENCY=2` only when on an instance plan with ≥ 2 GB RAM. `render.yaml` puts `autoedit-worker` on `standard` (1 CPU/2GB) specifically because 400-600MB source videos were OOM-killing the old combined starter (512MB) container even at concurrency 1 — watch the per-stage RSS logs (`pipeline._set_status`) to see whether this plan is actually big enough for your source files.
 - Local Docker Compose continues to work for development/testing.
 - Object storage is required for durable result delivery.
 - Never use Docker-specific hostnames in Render env; always use full URLs from providers.
@@ -85,42 +85,52 @@ cookie to be **same-site**. Serve everything behind one hostname:
 - Google OAuth client: authorize `https://<web-domain>/api/auth/callback` and
   `autoedit://auth/callback`.
 
-### Durable storage without object storage (single-user)
+### Object storage (R2) — required for the split API/worker layout
 
-Render disks attach to one service, so the multi-service split above can't share
-rendered files without S3/GCS/R2. So the API and the Celery worker run in **one
-container** (`docker/start-combined.sh`) sharing **one persistent disk** at
-`/data` (`STORAGE_DIR=/data/storage`, `ASSETS_DIR=/data/assets`). Split them back
-out and wire object storage when render throughput or multi-instance forces it.
+`autoedit-api` and `autoedit-worker` no longer share a disk — each render's
+source/thumbnail/final output/B-roll cache goes through
+`services/autoedit/object_storage.py` to Cloudflare R2 (`STORAGE_BACKEND=r2`),
+which both services read/write independently. Local disk on the worker is now
+a pure ephemeral L1 cache (redownloaded from R2 on a cache miss), not the
+source of truth. Set `R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY` on **both** services (dashboard, `sync: false`).
+`STORAGE_BACKEND` defaults to `local` — leave it unset for local dev
+(`docker compose up`), so `object_storage.py`'s functions are no-ops and
+everything behaves exactly as before this split.
+
+Videos processed before this split still have local-disk paths in the
+database and won't be downloadable/streamable after cutover (no data
+migration was run) — re-process them if needed.
 
 ---
 
 ## Deploy via `render.yaml` (Blueprint)
 
-`render.yaml` defines exactly this: managed Postgres + Redis, `autoedit`
-(FastAPI + Celery, with the disk), `autoedit-web` (Next.js proxy).
+`render.yaml` defines: managed Postgres + Redis, `autoedit-api` (FastAPI,
+no disk), `autoedit-worker` (Celery, no disk), `autoedit-web` (Next.js proxy).
 
 1. **Fork/repo on GitHub** connected to your Render account.
 2. Render Dashboard → **New** → **Blueprint** → pick the repo → Render reads
-   `render.yaml` → **Apply**. It creates all four resources.
+   `render.yaml` → **Apply**. It creates all five resources.
    - If the validator rejects `type: redis`, change it to `type: keyvalue`.
-   - The persistent disk needs the API service on a **paid** instance
-     (`starter`, ~$7/mo). To stay free: delete the `disk:` block and set
-     `STORAGE_DIR=/tmp/storage` — finished reels are then lost on every
-     restart/redeploy (DB rows survive; a re-render re-fetches source + B-roll).
-3. First deploy will be **unhealthy** until you fill the `sync: false` vars:
-   Dashboard → `autoedit` → Environment →
-   | Key | Value |
-   |---|---|
-   | `TOKEN_ENCRYPTION_KEY` | `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"` |
-   | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | from Google Cloud console OAuth client |
-   | `GOOGLE_REDIRECT_URI` | `https://<autoedit-web URL>/api/auth/callback` |
-   | `FRONTEND_URL` | `https://<autoedit-web URL>` |
-   | `OPENAI_API_KEY`, `PEXELS_API_KEY`, `APIFY_API_TOKEN` | your keys |
+   - Create an R2 bucket + API token (Cloudflare dashboard → R2) before this
+     step if you don't have one yet — you'll need the bucket name, endpoint,
+     and access key/secret for step 3.
+3. First deploy will be **unhealthy** until you fill the `sync: false` vars
+   on **both** `autoedit-api` and `autoedit-worker` (R2/`TOKEN_ENCRYPTION_KEY`/
+   Google creds are needed on both; the rest per the table):
+   | Key | Value | Service(s) |
+   |---|---|---|
+   | `TOKEN_ENCRYPTION_KEY` | `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"` | both |
+   | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | from Google Cloud console OAuth client | both |
+   | `GOOGLE_REDIRECT_URI` | `https://<autoedit-web URL>/api/auth/callback` | api |
+   | `FRONTEND_URL` | `https://<autoedit-web URL>` | api |
+   | `R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | from your R2 bucket | both |
+   | `OPENAI_API_KEY`, `PEXELS_API_KEY`, `APIFY_API_TOKEN` | your keys | worker |
 4. Google Cloud console → the OAuth client → Authorized redirect URIs, add:
    `https://<autoedit-web URL>/api/auth/callback` **and** `autoedit://auth/callback`.
-5. **Manual Deploy** → *Clear build cache & deploy* on `autoedit`, then
-   `autoedit-web`.
+5. **Manual Deploy** → *Clear build cache & deploy* on `autoedit-api`, then
+   `autoedit-worker`, then `autoedit-web`.
 6. Verify: `curl https://<autoedit-web URL>/health` → `{"api":true,"redis":true,
    "database":true,"ffmpeg":true}`. Sign in; import a Drive folder; process one
    clip to `READY`; download the reel.

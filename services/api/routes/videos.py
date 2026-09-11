@@ -6,7 +6,6 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
@@ -15,6 +14,7 @@ from autoedit.captions import phrases_from_plan_or_transcript
 from autoedit.db import get_db
 from autoedit.edit_schema import EditPlan as EditPlanSchema
 from autoedit.models import BrollAsset, EditPlan, Project, RenderJob, User, Video, YoutubeUpload
+from autoedit.object_storage import object_exists, serve_response
 from autoedit.pipeline import pick_music
 from api.routes.projects import serialize_video
 
@@ -162,13 +162,13 @@ def download_video(video_id: uuid.UUID, user: User = Depends(get_current_user), 
         .order_by(RenderJob.created_at.desc())
         .first()
     )
-    if not job or not job.output_path or not Path(job.output_path).exists():
+    if not job:
         raise HTTPException(404, "Rendered file not ready")
-    return FileResponse(
+    return serve_response(
         job.output_path,
         media_type="video/mp4",
         filename=f"{Path(video.filename).stem}-autoedit.mp4",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        no_cache=True,
     )
 
 
@@ -181,13 +181,9 @@ def stream_video(video_id: uuid.UUID, user: User = Depends(get_current_user), db
         .order_by(RenderJob.created_at.desc())
         .first()
     )
-    if not job or not job.output_path or not Path(job.output_path).exists():
+    if not job:
         raise HTTPException(404, "No output to preview")
-    return FileResponse(
-        job.output_path,
-        media_type="video/mp4",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
+    return serve_response(job.output_path, media_type="video/mp4", no_cache=True)
 
 
 def _latest_plan(db: Session, video_id: uuid.UUID) -> EditPlan | None:
@@ -242,7 +238,7 @@ def get_editor(video_id: uuid.UUID, user: User = Depends(get_current_user), db: 
     data["captionPhrases"] = phrases
     data["sourceUrl"] = f"/api/videos/{video.id}/source"
     data["musicUrl"] = f"/api/videos/{video.id}/music" if music and music.local_path else None
-    data["outputReady"] = bool(job and job.status == "READY" and job.output_path and Path(job.output_path).exists())
+    data["outputReady"] = bool(job and job.status == "READY" and object_exists(job.output_path))
     data["brollAssets"] = [
         {
             "id": str(a.id),
@@ -266,9 +262,9 @@ def get_editor(video_id: uuid.UUID, user: User = Depends(get_current_user), db: 
 @router.get("/{video_id}/source")
 def stream_source(video_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     video = _owned_video(db, user, video_id)
-    if not video.local_path or not Path(video.local_path).exists():
+    if not video.local_path:
         raise HTTPException(404, "Source file not found")
-    return FileResponse(video.local_path, media_type=_file_media_type(video.local_path))
+    return serve_response(video.local_path, media_type=_file_media_type(video.local_path))
 
 
 @router.get("/{video_id}/music")
@@ -279,9 +275,11 @@ def stream_music(video_id: uuid.UUID, user: User = Depends(get_current_user), db
     if plan_row:
         category = (plan_row.plan_json or {}).get("music_category") or category
     music = pick_music(db, category, user.id)
-    if not music or not music.local_path or not Path(music.local_path).exists():
+    if not music or not music.local_path:
         raise HTTPException(404, "No music file")
-    return FileResponse(music.local_path, media_type=_file_media_type(music.local_path))
+    return serve_response(
+        music.local_path, media_type=_file_media_type(music.local_path), force_local=music.is_system
+    )
 
 
 @router.get("/{video_id}/assets/{asset_id}")
@@ -293,9 +291,9 @@ def stream_asset(
 ):
     video = _owned_video(db, user, video_id)
     asset = db.query(BrollAsset).filter(BrollAsset.id == asset_id, BrollAsset.video_id == video.id).first()
-    if not asset or not asset.local_path or not Path(asset.local_path).exists():
+    if not asset or not asset.local_path:
         raise HTTPException(404, "Asset not found")
-    return FileResponse(asset.local_path, media_type=_file_media_type(asset.local_path))
+    return serve_response(asset.local_path, media_type=_file_media_type(asset.local_path))
 
 
 class EditPlanBody(BaseModel):

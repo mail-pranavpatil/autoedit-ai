@@ -13,8 +13,7 @@ COPY services /app/services
 COPY packages /app/packages
 COPY alembic /app/alembic
 COPY alembic.ini /app/alembic.ini
-COPY docker/start-combined.sh /app/start-combined.sh
-RUN chmod +x /app/start-combined.sh
+COPY assets /data/assets
 
 ENV PYTHONPATH=/app/services
 
