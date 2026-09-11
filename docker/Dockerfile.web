@@ -4,6 +4,18 @@ WORKDIR /app
 COPY apps/web/package.json /app/
 RUN npm install
 COPY apps/web /app
+
+# Next.js resolves rewrites() into a static routing manifest at `next build`
+# time, not at container startup — so API_PROXY_ORIGIN (used by
+# next.config.js) and NEXT_PUBLIC_API_URL (inlined into the client bundle)
+# both have to be present during the build, not just at runtime. Render only
+# passes a service's env vars into `docker build` for names declared as ARG
+# here; it auto-populates them from the same-named env vars on the service.
+ARG NEXT_PUBLIC_API_URL=""
+ARG API_PROXY_ORIGIN="http://localhost:8000"
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV API_PROXY_ORIGIN=$API_PROXY_ORIGIN
+
 EXPOSE 3000
 RUN npm run build
 
