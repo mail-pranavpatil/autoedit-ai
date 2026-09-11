@@ -22,7 +22,7 @@ export default function VideoDetailPage() {
   }, [videoId]);
 
   const polling = !video || starting || isProcessingStatus(video.status) || isYoutubePending(video);
-  usePolling(polling, load, 1500);
+  usePolling(polling, load, 3000);
 
   if (!video) return <p className="text-muted">Loading video…</p>;
   const plan = video.editPlan as { video_summary?: string; tone?: string; music_category?: string; segments?: unknown[] } | null;

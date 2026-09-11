@@ -30,7 +30,7 @@ def _owned_video(db: Session, user: User, video_id: uuid.UUID) -> Video:
             joinedload(Video.transcript),
             joinedload(Video.edit_plans),
             joinedload(Video.render_jobs),
-            joinedload(Video.youtube_upload),
+            joinedload(Video.youtube_upload),  # must be eager — lazy load fails on detached instances
         )
         .filter(Video.id == video_id, Project.user_id == user.id)
         .first()
