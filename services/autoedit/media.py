@@ -20,6 +20,11 @@ def run_ffmpeg(args: list[str], timeout: int = 3600) -> subprocess.CompletedProc
         raise ValueError("Only ffmpeg/ffprobe argument arrays are allowed")
     if any(not isinstance(a, str) for a in args):
         raise TypeError("FFmpeg arguments must be strings")
+    # Cap decoder threads: an uncapped ffprobe/thumbnail/audio-extract decode of a
+    # large source can spike memory past this container's limit (OOM -> SIGKILL 9),
+    # same risk the render path already guards against via render_ffmpeg_threads.
+    threads = str(max(1, int(get_settings().render_ffmpeg_threads)))
+    args = [args[0], "-threads", threads, *args[1:]]
     logger.info("ffmpeg argv: %s", " ".join(args[:24]))
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=timeout)
 
