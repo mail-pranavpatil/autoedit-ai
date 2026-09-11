@@ -3,12 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { isProcessingStatus } from "@/lib/api";
 
-/** How far the bar may creep while a stage has not reported the next milestone. */
+/**
+ * How far the bar may creep while a stage has not reported the next milestone.
+ * Must stay non-decreasing in pipeline order (mirrors PIPELINE_ORDER in
+ * services/autoedit/edit_schema.py) — the easing loop below has no branch for
+ * a ceiling that drops below what's already displayed, so a lower value here
+ * than the previous stage freezes the bar solid instead of just slowing it.
+ */
 const STAGE_CEILING: Record<string, number> = {
   QUEUED: 9,
   DOWNLOADING: 28,
   DOWNLOADED: 28,
-  PROBING: 27,
+  PROBING: 29,
   TRANSCRIBING: 42,   // Whisper can take 30-90s; give the bar room to creep visibly
   TRANSCRIBED: 42,
   PLANNING: 54,
@@ -20,6 +26,17 @@ const STAGE_CEILING: Record<string, number> = {
   VALIDATING: 99,
   READY: 100,
 };
+
+if (process.env.NODE_ENV !== "production") {
+  const values = Object.values(STAGE_CEILING);
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] < values[i - 1]) {
+      throw new Error(
+        `STAGE_CEILING must be non-decreasing in declaration order (index ${i} drops below the previous stage) — this freezes the progress bar.`
+      );
+    }
+  }
+}
 
 function ceilingFor(status: string, server: number) {
   if (status === "FAILED") return Math.max(0, server);

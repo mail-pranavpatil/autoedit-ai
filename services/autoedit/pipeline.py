@@ -203,6 +203,9 @@ def _pipeline(db: Session, video: Video, job: RenderJob, ws: Path, access_token:
         video.height = info["height"]
         video.fps = info["fps"]
         video.source_hash = hash_file(str(source))
+        # Nudge progress so the bar visibly moves past the ceiling for a slow hash of a large file
+        video.progress = 20
+        db.commit()
         thumb = ws / "thumb.jpg"
         try:
             extract_thumbnail(str(source), str(thumb))
