@@ -7,6 +7,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+try:
+    import resource  # POSIX only - absent on Windows dev machines
+except ImportError:
+    resource = None  # type: ignore[assignment]
+
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError
@@ -71,6 +76,11 @@ def _set_status(db: Session, video: Video, status: str, stage: str | None = None
         video.error_message = None
         video.failed_stage = None
     db.commit()
+    if resource is not None:
+        # ru_maxrss is KB on Linux - lets a future memory alert be traced to
+        # a specific video + stage instead of guesswork.
+        rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        logger.info("Video %s stage=%s rss=%.0fMB", video.id, status, rss_mb)
 
 
 def fail(db: Session, video: Video, stage: str, exc: Exception) -> None:

@@ -22,6 +22,12 @@ celery_app.conf.update(
     # hard limit is a last-resort SIGKILL if that handling itself hangs.
     task_soft_time_limit=5400,
     task_time_limit=5700,
+    # The kernel OOM-killer is the only thing that currently reclaims worker
+    # memory, reactively, after the container's already in trouble (that's
+    # what triggers Render's memory-cap alerts). Recycle a worker child once
+    # its RSS creeps past ~300MB instead - checked after each task completes,
+    # so it never interrupts an in-progress render.
+    worker_max_memory_per_child=300_000,
 )
 
 celery_app.autodiscover_tasks(["worker"])
