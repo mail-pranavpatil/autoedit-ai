@@ -127,6 +127,15 @@ out and wire object storage when render throughput or multi-instance forces it.
 `render.yaml` auto-wires `DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`
 (generated), and `API_PROXY_ORIGIN` (web → API internal address).
 
+**Pitfall already hit and fixed:** Next's `rewrites()` (used for the same-origin
+proxy) are resolved into a static manifest at `next build` time, not at
+container startup — and Render only passes a service's env vars into `docker
+build` for names declared `ARG` in the Dockerfile. `docker/Dockerfile.web`
+declares `ARG API_PROXY_ORIGIN` / `ARG NEXT_PUBLIC_API_URL` for this reason. If
+you ever see `/health` 500 with `Failed to proxy http://localhost:8000/...` in
+the `autoedit-web` logs, this is why — some build-time value wasn't threaded
+through as an `ARG`.
+
 ### GitHub Actions credentials
 
 **None.** Render deploys by pulling the connected repo directly — nothing goes in
