@@ -34,6 +34,7 @@ def _broll_clip_filter(w: int, h: int, dur: float) -> str:
 _CLIP_ENC = [
     "-r", "30", "-c:v", "libx264", "-preset", "veryfast",
     "-pix_fmt", "yuv420p", "-an", "-video_track_timescale", "15360",
+    "-threads", "1",  # cap encoder threads; gap/clip renders live in a memory-capped container
 ]
 
 
@@ -63,7 +64,8 @@ def write_broll_track(
     def _black(gap: float, tag: str) -> Path:
         p = out_dir / f"gap_{tag}.mp4"
         run_ffmpeg(
-            ["ffmpeg", "-y", *thr, "-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=30:d={gap:.3f}",
+            ["ffmpeg", "-y", *thr, "-thread_queue_size", "512",
+             "-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=30:d={gap:.3f}",
              "-t", f"{gap:.3f}", *_CLIP_ENC, str(p)],
             timeout=120,
         )

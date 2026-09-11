@@ -47,7 +47,7 @@ services:
       - key: ASSETS_DIR
         value: /data/assets
       - key: WORKER_CONCURRENCY
-        value: "2"
+        value: "1"           # starter plan ≈ 512 MB; 1 render at a time prevents OOM SIGKILL 9
       - key: RENDER_FFMPEG_THREADS
         value: "1"
       - key: COOKIE_SECURE
