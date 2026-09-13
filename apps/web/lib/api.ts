@@ -53,6 +53,7 @@ export type Video = {
   currentStage?: string | null;
   thumbnailUrl?: string | null;
   outputUrl?: string | null;
+  outputUnavailable?: boolean;
   errorMessage?: string | null;
   failedStage?: string | null;
   retryCount?: number;

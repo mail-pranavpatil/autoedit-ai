@@ -1,7 +1,7 @@
 # AutoEdit AI — project context for Claude
 
 Paste-and-discuss brief. Covers what the project is, how it's built, and the
-**exact stage of development** it's at (as of 2026-09-02).
+**exact stage of development** it's at (as of 2026-09-13).
 
 ---
 
@@ -30,6 +30,7 @@ Monorepo:
 | Path | What |
 |------|------|
 | `apps/web` | Next.js + React + TS + Tailwind frontend |
+| `apps/mobile` | Flutter iOS shell — `webview_flutter` wrapper around the hosted web app + native glue for OAuth/downloads/external links |
 | `services/api` | FastAPI app — auth, projects, drive, videos, assets, settings, media, youtube routes |
 | `services/worker` | Celery worker (`celery_app.py`, `tasks.py`) |
 | `services/autoedit` | **the actual pipeline** — shared by api + worker |
@@ -91,59 +92,48 @@ Shipped on top of the base MVP (see git log):
 - **Jina reranker** (`image_ranking/`) — multimodal rerank of image B-roll
   candidates. OFF by default (`ENABLE_JINA_RERANKER=false`); any failure falls
   back to the existing selection.
-
-### In flight right now — "dense B-roll" (uncommitted working tree on `main`)
-
-Goal: instead of sparse stock B-roll every 4–8s, give **almost every spoken
-phrase its own full-screen image** pulled from the real web.
-
-New / changed (10 modified files + 4 new, not yet committed):
-
-- **`services/autoedit/broll_plan.py`** (new) — one `gpt-4o` call
-  (`BROLL_QUERY_MODEL`) turns ordered caption phrases into one literal
-  image-search query per phrase; `build_dense_broll()` rewrites the timeline so
-  each phrase becomes an image B-roll segment, gaps stay talking-head.
-- **`providers.py`** — `ApifyImageSearch`: one Apify Actor run scrapes many
-  Google Images queries at once; maps results to the shape Pexels/Jina expect;
-  denylists paid-stock hosts and non-image crawler URLs. Pexels is now **video
-  B-roll only**.
-- **`compose.py`** — `write_broll_track()` pre-renders all image cuts into ONE
-  1080×1920 track + show-windows, so the final graph adds a single overlay
-  instead of dozens of concurrent image decoders.
-- **`pipeline.py`** — dense path wired in after `enforce_visual_cadence`; one
-  Apify run per video, serial candidate downloads, Jina rerank when enabled.
-- **`config.py` / `.env.example`** — `ENABLE_DENSE_BROLL=true` (kill switch back
-  to sparse Pexels), `APIFY_API_TOKEN`, `APIFY_IMAGE_ACTOR`,
-  `APIFY_RESULTS_PER_QUERY`, `APIFY_TIMEOUT_SECONDS`, `BROLL_QUERY_MODEL`.
-  `JINA_TIMEOUT_SECONDS` 10 → 25.
-- **`edit_schema.py`** — `MAX_VISUAL_ASSETS` 16 → 120 (safety slice for
-  phrase-density B-roll, not a design target).
-- **`drive.py`** — `download_image()` helper (+ tests).
-- New tests: `tests/test_apify_search.py`, `tests/test_broll_plan.py`,
-  `tests/test_download_image.py`.
-
-Git history context: commits `ff0ae2d` "jena ai changes with errors" then
-`fce139a` "...errors removed" — the Jina/dense-broll work landed rough and is
-still being stabilised. **The working tree is mid-refactor; nothing since
-`fce139a` is committed.**
+- **Dense B-roll** — instead of sparse stock B-roll every 4–8s, almost every
+  spoken phrase gets its own full-screen image pulled from the real web.
+  `broll_plan.py` (one `gpt-4o` call, `BROLL_QUERY_MODEL`) turns ordered
+  caption phrases into one literal image-search query per phrase;
+  `build_dense_broll()` rewrites the timeline so each phrase becomes an image
+  B-roll segment, gaps stay talking-head. `providers.py`'s `ApifyImageSearch`
+  runs one Apify Actor (`hooli~google-images-scraper`) per video to scrape all
+  queries at once; `compose.py`'s `write_broll_track()` pre-renders every image
+  cut into one 1080×1920 track so the final graph adds a single overlay
+  instead of dozens of concurrent image decoders. Kill switch:
+  `ENABLE_DENSE_BROLL=false` falls back to sparse Pexels (video B-roll only
+  once dense mode is on).
+- **Object storage** — `services/autoedit/object_storage.py` ships a dual-mode
+  `local`/`r2` backend (`STORAGE_BACKEND` env var, default `local`) —
+  Cloudflare R2 in production, unchanged local-disk behavior for dev.
+  `storage/broll-cache/` is a pure ephemeral L1 cache on the worker; R2 is the
+  source of truth.
+- **iOS shell** (`apps/mobile`) — Flutter `webview_flutter` wrapper around the
+  single-origin hosted web app (Phase 0: Next.js proxying `/api/*` to FastAPI
+  behind one HTTPS host). Native glue (`lib/webview_shell.dart`) handles the
+  three things a bare WebView can't: Google OAuth (Google rejects its consent
+  screen in an embedded WebView, so this runs `ASWebAuthenticationSession` via
+  `flutter_web_auth_2` and injects the returned token as the
+  `autoedit_session` cookie), file downloads (WKWebView ignores
+  `Content-Disposition: attachment`, so downloads are fetched manually and
+  handed to the share sheet), and off-origin links (opened in Safari). No
+  native editor, no offline support, no push notifications — explicit
+  non-goals, see `apps/mobile/README.md`. CI (`.github/workflows/ios.yml`)
+  compiles it unsigned on `macos-latest`; producing a real IPA needs Apple
+  signing secrets.
 
 ### Known loose ends / things to decide
 
-- **Apify actor id mismatch**: `config.py` default is
-  `hooli~google-images-scraper`, `README.md` says `emastra~google-images-scraper`.
-  Pick one and verify its input/output schema against `ApifyImageSearch._build_input`
-  / `_map_item`.
-- Dense B-roll not yet committed or run at batch scale; `_collect_broll` does one
-  Apify run + **serial** downloads per video — flagged in a `ponytail:` comment as
-  the wall-time bottleneck for reels with many phrases.
-- **Object storage wired (2026-09-12).** `services/autoedit/object_storage.py`
-  ships a dual-mode `local`/`r2` backend (`STORAGE_BACKEND` env var, default
-  `local`) — Cloudflare R2 in production, unchanged local-disk behavior for
-  dev. `storage/broll-cache/` is local-only (gitignored, not actually
-  committed despite what this doc used to say) and is now a pure ephemeral
-  L1 cache on the worker; R2 is the source of truth. Videos processed before
-  this shipped keep local-disk paths and aren't downloadable post-cutover —
-  no data migration was run.
+- Dense B-roll not yet run at batch scale; `_collect_broll` does one Apify run
+  + **serial** downloads per video — flagged in a `ponytail:` comment as the
+  wall-time bottleneck for reels with many phrases.
+- Videos rendered before the R2 storage cutover had their local-disk output
+  files lost when the old container was recycled — unrecoverable, no
+  migration was possible. `serialize_video()`
+  (`services/api/routes/projects.py`) now checks `object_exists()` before
+  exposing `outputUrl` for a READY video, so the UI shows "video unavailable"
+  for these instead of a dead download link.
 - Auth is minimal (Google OAuth sign-in only, single-user assumptions in places).
 - No billing / multi-tenancy / rate limiting (explicitly out of MVP).
 - Deploy target is Render as 3 services (`autoedit-web`, `autoedit-api`,
@@ -181,6 +171,10 @@ cd apps/web && npm install && npm run dev
 
 Tests: `PYTHONPATH=services pytest` (media render test needs `ffmpeg`/`ffprobe`
 on PATH).
+
+iOS shell: `cd apps/mobile && flutter run --dart-define=AUTOEDIT_APP_URL=<url>`
+(needs macOS + Xcode to run on a device/simulator; `flutter analyze`/`flutter
+test` work anywhere — see `apps/mobile/README.md`).
 
 ---
 

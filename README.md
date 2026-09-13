@@ -40,7 +40,7 @@ Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
 - `APIFY_API_TOKEN` — dense per-phrase web-image B-roll (Google Images via an
   Apify Actor). Set `ENABLE_DENSE_BROLL=false` to disable and fall back to sparse
   Pexels stock. Actor id in `APIFY_IMAGE_ACTOR` (default
-  `emastra~google-images-scraper`).
+  `hooli~google-images-scraper`).
 - `JINA_API_KEY` — optional. Only used when `ENABLE_JINA_RERANKER=true`, which
   reranks B-roll image candidates with `jina-reranker-m0` before selection.
   Off by default; any failure falls back to the existing selection.

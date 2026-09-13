@@ -331,13 +331,11 @@ class ApifyImageSearch(AssetSearchProvider):
 
     # -- input/output seam: adjust here if the Actor's schema differs -------------
     def _build_input(self, queries: list[str], per_query: int) -> dict:
+        # Actor's actual input schema has exactly these two fields - see
+        # https://apify.com/hooli/google-images-scraper/input-schema.
         return {
             "queries": list(queries),
-            "maxImagesPerQuery": per_query,
             "maxResultsPerQuery": per_query,
-            "resultsPerPage": per_query,
-            "downloadImages": False,
-            "saveImages": False,
         }
 
     def _map_item(self, item: dict) -> dict | None:

@@ -18,7 +18,7 @@ export default function ResultsPage() {
 
   if (!project) return <p className="text-muted">Loading results…</p>;
   const videos = project.videos || [];
-  const ready = videos.filter((v) => v.status === "READY");
+  const ready = videos.filter((v) => v.status === "READY" && v.outputUrl);
   const failed = videos.filter((v) => v.status === "FAILED");
 
   return (
@@ -102,6 +102,9 @@ function ResultCard({ video, projectId }: { video: Video; projectId: string }) {
             Download video
           </a>
         </div>
+      )}
+      {video.outputUnavailable && (
+        <div className="border-t border-line p-3 text-sm text-muted">Video unavailable</div>
       )}
     </div>
   );

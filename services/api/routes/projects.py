@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from autoedit.auth import get_current_user
 from autoedit.db import get_db
 from autoedit.models import Project, User, Video
+from autoedit.object_storage import object_exists
 from autoedit.youtube import serialize_youtube
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -79,7 +80,15 @@ def get_project(project_id: uuid.UUID, user: User = Depends(get_current_user), d
     return data
 
 
+def _output_ready(v: Video) -> bool:
+    if v.status != "READY":
+        return False
+    job = max(v.render_jobs, key=lambda j: j.created_at, default=None)
+    return bool(job and object_exists(job.output_path))
+
+
 def serialize_video(v: Video) -> dict:
+    output_ready = _output_ready(v)
     return {
         "id": str(v.id),
         "filename": v.filename,
@@ -90,7 +99,8 @@ def serialize_video(v: Video) -> dict:
         "progress": v.progress,
         "currentStage": v.current_stage,
         "thumbnailUrl": f"/api/media/thumb/{v.id}" if v.thumbnail_path else None,
-        "outputUrl": f"/api/videos/{v.id}/download" if v.status == "READY" else None,
+        "outputUrl": f"/api/videos/{v.id}/download" if output_ready else None,
+        "outputUnavailable": v.status == "READY" and not output_ready,
         "errorMessage": v.error_message,
         "failedStage": v.failed_stage,
         "retryCount": v.retry_count,

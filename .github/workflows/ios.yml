@@ -1,9 +1,8 @@
 name: Build iOS
 
-# Compile-check the Capacitor shell + the local `autoedit-native` plugin on a
-# macOS runner (the dev machine is Windows). Unsigned build — proves the Swift
-# compiles; producing an installable IPA needs signing secrets (see
-# apps/mobile/README.md / plan Phase 5c).
+# Compile-check the Flutter WebView shell on a macOS runner (the dev machine
+# is Windows). Unsigned build - proves it compiles; producing an installable
+# IPA needs signing secrets (see apps/mobile/README.md).
 
 on:
   workflow_dispatch:
@@ -23,55 +22,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
+          channel: stable
 
       - name: Install dependencies
-        run: npm ci
+        run: flutter pub get
 
-      - name: Add iOS platform
-        run: npx cap add ios
+      - name: Analyze
+        run: flutter analyze
 
-      - name: Sync Capacitor (links autoedit-native via CocoaPods)
-        run: npx cap sync ios
-
-      - name: pod install
-        working-directory: apps/mobile/ios/App
-        run: pod install
-
-      - name: Verify autoedit-native is in the build
-        working-directory: apps/mobile/ios/App
-        run: |
-          # All Capacitor pods are CocoaPods :path (development) pods — sources
-          # are referenced in place, never copied into Pods/<name>/. So assert
-          # the pod is locked and the Pods project references our Swift file.
-          grep -q "AutoeditNative" Podfile.lock \
-            || { echo "::error::AutoeditNative missing from Podfile.lock — cap did not pick up the local plugin"; exit 1; }
-          grep -q "AutoEditNativePlugin.swift" Pods/Pods.xcodeproj/project.pbxproj \
-            || { echo "::error::AutoEditNativePlugin.swift not referenced by the Pods project — podspec source_files glob is wrong"; exit 1; }
+      - name: Test
+        run: flutter test
 
       - name: Compile (unsigned)
-        working-directory: apps/mobile/ios/App
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -workspace App.xcworkspace \
-            -scheme App \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            build | tee xcodebuild.log
-          grep -q "BUILD SUCCEEDED" xcodebuild.log \
-            || { echo "::error::xcodebuild did not report BUILD SUCCEEDED"; exit 1; }
+        run: flutter build ios --release --no-codesign
 
       - name: Upload unsigned .app
         uses: actions/upload-artifact@v4
         with:
           name: AutoEditAI-unsigned-app
-          path: apps/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app
+          path: apps/mobile/build/ios/iphoneos/Runner.app
           if-no-files-found: error
