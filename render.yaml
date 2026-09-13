@@ -97,7 +97,11 @@ services:
     dockerContext: .
     plan: standard          # 1 CPU / 2GB - bump/shrink using the RSS-per-stage
                              # worker logs (pipeline._set_status) to size it for real
-    dockerCommand: "celery -A worker.celery_app worker --loglevel=info -Q celery,youtube --concurrency=${WORKER_CONCURRENCY:-1}"
+    # Render's dockerCommand is NOT run through a shell - bash's ${VAR:-default}
+    # fallback syntax doesn't expand, it's passed through literally and breaks
+    # celery's arg parsing. WORKER_CONCURRENCY is always set below, so plain
+    # ${VAR} substitution (which Render does support) is enough.
+    dockerCommand: "celery -A worker.celery_app worker --loglevel=info -Q celery,youtube --concurrency=${WORKER_CONCURRENCY}"
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
