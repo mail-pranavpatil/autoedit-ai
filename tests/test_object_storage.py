@@ -7,6 +7,13 @@ from fastapi.responses import FileResponse
 from autoedit.object_storage import delete_object, ensure_local, object_exists, save_output, serve_response
 
 
+@pytest.fixture(autouse=True)
+def _force_local_backend(monkeypatch):
+    # These tests exercise local-mode behavior specifically, regardless of
+    # whatever STORAGE_BACKEND happens to be set in the developer's real .env.
+    monkeypatch.setattr("autoedit.object_storage._is_local", lambda: True)
+
+
 def test_save_output_local_mode_is_a_noop(tmp_path: Path):
     local = tmp_path / "final.mp4"
     local.write_bytes(b"video-bytes")
