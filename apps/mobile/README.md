@@ -1,9 +1,11 @@
-# AutoEdit AI — iOS shell
+# Eren — iOS shell
 
-A thin native wrapper (Flutter `webview_flutter`) around the hosted AutoEdit
-AI web app. All features come from the web app unchanged; this package only
-adds the things a bare WebView can't do (Google OAuth, file downloads,
-external links) and packages it as an installable iOS app.
+The iOS app is branded **Eren** (App Store Connect listing: "Eren - Your AI
+Video Editor", bundle id `ai.autoedit.app`) — a thin native wrapper (Flutter
+`webview_flutter`) around the hosted AutoEdit AI web app. All features come
+from the web app unchanged; this package only adds the things a bare WebView
+can't do (Google OAuth, file downloads, external links) and packages it as an
+installable iOS app.
 
 Requires **macOS + Xcode + CocoaPods** to build locally. On Windows/Linux you
 can still edit everything (`flutter analyze`/`flutter test` run anywhere) and
@@ -65,11 +67,34 @@ a signed **ad-hoc IPA** (Product → Archive → Distribute App → Ad Hoc).
 
 ## CI
 
-`.github/workflows/ios.yml` (`macos-latest`): `flutter pub get` → `flutter
-analyze` → `flutter test` → `flutter build ios --no-codesign`. Green means the
-shell compiles and its routing-logic tests pass; it uploads the unsigned
-`Runner.app` as an artifact. It does **not** produce an installable IPA — that
-needs Apple signing secrets + `xcodebuild -exportArchive`.
+`.github/workflows/ios.yml` (`macos-latest`), two jobs:
+
+- **`build`** — every push touching `apps/mobile/**`: `flutter pub get` →
+  `flutter analyze` → `flutter test` → `flutter build ios --no-codesign
+  --debug`, uploads the unsigned `Runner.app` as an artifact. No signing
+  secrets needed.
+- **`release`** — `main` branch only, after `build` passes: imports a
+  distribution certificate + provisioning profile into a throwaway CI
+  keychain, archives with manual signing, exports a signed IPA, and uploads it
+  to TestFlight via `apple-actions/upload-testflight-build@v1`.
+
+### Release secrets (repo Settings → Secrets and variables → Actions)
+
+| Secret | Where it comes from |
+|---|---|
+| `AUTOEDIT_APP_URL` | Your deployed single-origin URL (e.g. `https://your-domain.example`) |
+| `APPLE_TEAM_ID` | developer.apple.com → Membership |
+| `APP_STORE_CONNECT_ISSUER_ID` | App Store Connect → Users and Access → Integrations → App Store Connect API |
+| `APP_STORE_CONNECT_KEY_ID` | Same page, the key's ID |
+| `APP_STORE_CONNECT_API_KEY_BASE64` | base64 of that key's `.p8` file (Apple only lets you download it once — keep the original safe) |
+| `IOS_DIST_CERTIFICATE_BASE64` | base64 of an **Apple Distribution** `.p12` (certificate + private key). Not app-specific — the same one used for any other app under this Apple Developer team can be reused as-is. |
+| `IOS_DIST_CERTIFICATE_PASSWORD` | The password used when exporting that `.p12` |
+| `IOS_PROVISIONING_PROFILE_BASE64` | base64 of the **App Store** distribution provisioning profile for `ai.autoedit.app` ("Eren- AI Video Editor", developer.apple.com → Profiles) — provisioning profiles are bundle-id specific, so a new one was created for this app; its exact name must match `ios/ExportOptions.plist` / `project.pbxproj`'s `PROVISIONING_PROFILE_SPECIFIER` |
+| `KEYCHAIN_PASSWORD` | Not an Apple credential — any string you invent, only used for the temporary CI keychain |
+
+`ios/ExportOptions.plist` and the `Release` build config in
+`ios/Runner.xcodeproj/project.pbxproj` use `__TEAM_ID__` as a placeholder,
+substituted by `sed` at CI time from `APPLE_TEAM_ID` — never hardcoded.
 
 ## How auth works in the shell
 

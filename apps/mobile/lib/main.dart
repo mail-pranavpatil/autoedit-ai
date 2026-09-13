@@ -12,7 +12,7 @@ class AutoEditApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AutoEdit AI',
+      title: 'Eren',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
       home: const WebViewShell(),

@@ -1,8 +1,10 @@
 name: Build iOS
 
 # Compile-check the Flutter WebView shell on a macOS runner (the dev machine
-# is Windows). Unsigned build - proves it compiles; producing an installable
-# IPA needs signing secrets (see apps/mobile/README.md).
+# is Windows). `build` runs on every push, unsigned debug - proves it
+# compiles. `release` (main branch only) does a signed archive and uploads to
+# TestFlight - see apps/mobile/README.md for what the secrets below are and
+# where to get them.
 
 on:
   workflow_dispatch:
@@ -12,7 +14,7 @@ on:
       - ".github/workflows/ios.yml"
 
 jobs:
-  build-ios:
+  build:
     runs-on: macos-latest
     defaults:
       run:
@@ -36,8 +38,8 @@ jobs:
       - name: Test
         run: flutter test
 
-      - name: Compile (unsigned)
-        run: flutter build ios --release --no-codesign
+      - name: Compile (unsigned, debug)
+        run: flutter build ios --no-codesign --debug
 
       - name: Upload unsigned .app
         uses: actions/upload-artifact@v4
@@ -45,3 +47,112 @@ jobs:
           name: AutoEditAI-unsigned-app
           path: apps/mobile/build/ios/iphoneos/Runner.app
           if-no-files-found: error
+
+  release:
+    runs-on: macos-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Import signing certificate and provisioning profile
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_DIST_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_DIST_CERTIFICATE_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -e
+          CERT_PATH="$RUNNER_TEMP/dist.p12"
+          PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+
+          echo "$CERTIFICATE_BASE64" | base64 -D > "$CERT_PATH"
+          echo "$PROFILE_BASE64" | base64 -D > "$PROFILE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
+
+          mkdir -p ~/Library/MobileDevice/"Provisioning Profiles"
+          PROFILE_UUID=$(security cms -D -i "$PROFILE_PATH" | plutil -extract UUID xml1 -o - - | sed -n 's/.*<string>\(.*\)<\/string>.*/\1/p')
+          cp "$PROFILE_PATH" ~/Library/MobileDevice/"Provisioning Profiles"/"$PROFILE_UUID.mobileprovision"
+
+      - name: Prepare Flutter iOS build artifacts
+        env:
+          AUTOEDIT_APP_URL: ${{ secrets.AUTOEDIT_APP_URL }}
+        run: flutter build ios --release --no-codesign --dart-define=AUTOEDIT_APP_URL=$AUTOEDIT_APP_URL
+
+      - name: Archive
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Signing is scoped to the Runner target only (in project.pbxproj) so it
+          # doesn't leak onto Swift Package plugin targets, which can't take a
+          # provisioning profile.
+          sed -i '' "s/__TEAM_ID__/$APPLE_TEAM_ID/" ios/Runner.xcodeproj/project.pbxproj
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            archive
+
+      - name: Export IPA
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          sed "s/__TEAM_ID__/$APPLE_TEAM_ID/" ios/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Locate exported IPA
+        id: locate_ipa
+        run: |
+          echo "Contents of export dir:"
+          find "$RUNNER_TEMP/export" -maxdepth 3
+          IPA_PATH=$(find "$RUNNER_TEMP/export" -name "*.ipa" | head -n 1)
+          if [ -z "$IPA_PATH" ]; then
+            echo "No .ipa found under $RUNNER_TEMP/export" >&2
+            exit 1
+          fi
+          echo "path=$IPA_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Decode App Store Connect API key
+        id: decode_key
+        env:
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: |
+          KEY_CONTENT=$(echo "$API_KEY_BASE64" | base64 -D)
+          {
+            echo "key<<EOF_KEY_DELIM"
+            echo "$KEY_CONTENT"
+            echo "EOF_KEY_DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload to TestFlight
+        uses: apple-actions/upload-testflight-build@v1
+        with:
+          app-path: ${{ steps.locate_ipa.outputs.path }}
+          app-type: ios
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ steps.decode_key.outputs.key }}
