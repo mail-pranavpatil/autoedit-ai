@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Eren</string>
+	<string>Eren - Your AI Social Media Guy</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
