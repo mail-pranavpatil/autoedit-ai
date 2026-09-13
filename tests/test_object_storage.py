@@ -62,6 +62,35 @@ def test_serve_response_404s_when_missing(tmp_path: Path):
     assert exc_info.value.status_code == 404
 
 
+class _FakeR2Client:
+    """head_object succeeds for a key that has no matching local path -
+    the whole point of R2 mode, and what a bare Path(key).exists() check
+    (the youtube.py bug) misses."""
+
+    def head_object(self, Bucket, Key):
+        if Key != "videos/abc/final.mp4":
+            raise Exception("404")
+
+    def download_file(self, Bucket, Key, dest):
+        Path(dest).write_bytes(b"downloaded")
+
+
+def test_object_exists_in_r2_mode_checks_the_bucket_not_the_filesystem(monkeypatch):
+    monkeypatch.setattr("autoedit.object_storage._is_local", lambda: False)
+    monkeypatch.setattr("autoedit.object_storage._client", lambda: _FakeR2Client())
+    assert object_exists("videos/abc/final.mp4") is True
+    assert object_exists("videos/missing/final.mp4") is False
+
+
+def test_ensure_local_downloads_from_r2_when_missing_locally(tmp_path, monkeypatch):
+    monkeypatch.setattr("autoedit.object_storage._is_local", lambda: False)
+    monkeypatch.setattr("autoedit.object_storage._client", lambda: _FakeR2Client())
+    dest = tmp_path / "cache" / "final.mp4"
+    resolved = ensure_local("videos/abc/final.mp4", dest)
+    assert resolved == dest
+    assert dest.read_bytes() == b"downloaded"
+
+
 if __name__ == "__main__":
     import sys
 

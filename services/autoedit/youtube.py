@@ -11,7 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from autoedit.auth import get_valid_access_token, has_youtube_scope
+from autoedit.config import get_settings
 from autoedit.models import DriveConnection, RenderJob, User, Video, YoutubeUpload
+from autoedit.object_storage import ensure_local, object_exists
 from autoedit.youtube_schedule import next_publish_slot, publish_at_rfc3339, youtube_title_from_filename
 
 logger = logging.getLogger("autoedit")
@@ -173,7 +175,7 @@ def publish_video_to_youtube(db: Session, video_id: str, *, force: bool = False)
         .first()
     )
     output = job.output_path if job else None
-    if not output or not Path(output).exists():
+    if not output or not object_exists(output):
         row.status = "FAILED"
         row.scheduled_at = None
         row.error_message = "Rendered file not ready"
@@ -188,7 +190,13 @@ def publish_video_to_youtube(db: Session, video_id: str, *, force: bool = False)
             token = get_valid_access_token(db, user)
         except HTTPException as exc:
             raise RuntimeError(getattr(exc, "detail", None) or "Google access was revoked. Sign in again.") from exc
-        youtube_id = upload_scheduled_video(token, output, title, slot, video.duration)
+        local_dest = get_settings().storage_dir / "youtube" / f"{video.id}.mp4"
+        local_file = ensure_local(output, local_dest)
+        try:
+            youtube_id = upload_scheduled_video(token, str(local_file), title, slot, video.duration)
+        finally:
+            if local_file == local_dest and local_file.exists():
+                local_file.unlink(missing_ok=True)
         row.youtube_video_id = youtube_id
         row.youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
         row.status = "SCHEDULED"
