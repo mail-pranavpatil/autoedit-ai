@@ -11,8 +11,7 @@ from fastapi.responses import JSONResponse
 from autoedit.config import get_settings
 from autoedit.db import SessionLocal
 from autoedit.logging_setup import setup_logging
-from autoedit.seed import seed_system_assets
-from api.routes import assets, auth, drive, health, media, projects, settings as settings_routes, videos, youtube
+from api.routes import assets, auth, channels, drive, health, media, projects, settings as settings_routes, videos, youtube
 
 setup_logging()
 logger = logging.getLogger("autoedit")
@@ -69,6 +68,7 @@ def startup():
 
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(channels.router)
 app.include_router(projects.router)
 app.include_router(drive.router)
 app.include_router(videos.router)

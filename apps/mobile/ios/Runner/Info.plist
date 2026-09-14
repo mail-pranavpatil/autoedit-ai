@@ -37,6 +37,10 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Eren needs access to your Photos library to import talking-head clips for editing.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Eren needs access to your camera to record clips directly in the app.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Eren needs access to your microphone to capture clear audio for your videos.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

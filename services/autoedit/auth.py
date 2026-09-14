@@ -1,6 +1,7 @@
-from __future__ import annotations
-
+import hashlib
+import hmac
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
@@ -147,8 +148,31 @@ def get_valid_access_token(db: Session, user: User) -> str:
     return refresh_access_token(db, conn)
 
 
+def hash_password(password: str) -> str:
+    salt = os.urandom(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 260000)
+    return f"{salt.hex()}:{key.hex()}"
+
+
+def verify_password(stored_hash: str, password: str) -> bool:
+    if not stored_hash or ":" not in stored_hash:
+        return False
+    try:
+        salt_hex, key_hex = stored_hash.split(":", 1)
+        salt = bytes.fromhex(salt_hex)
+        key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 260000)
+        return hmac.compare_digest(key.hex(), key_hex)
+    except Exception:
+        return False
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    token = request.cookies.get(COOKIE_NAME)
+    token = None
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.cookies.get(COOKIE_NAME)
     if not token:
         raise HTTPException(401, "Not signed in")
     user_id = read_session_token(token)
