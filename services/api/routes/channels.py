@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from autoedit.auth import get_current_user, get_valid_access_token, google_auth_url
 from autoedit.config import get_settings
 from autoedit.db import get_db
-from autoedit.models import ConnectedChannel, User
+from autoedit.models import ChannelStatsSnapshot, ConnectedChannel, User
 from autoedit.security import create_oauth_state
 from autoedit.youtube import fetch_user_youtube_channels
 
@@ -72,7 +72,7 @@ def get_my_youtube_channels(user: User = Depends(get_current_user), db: Session 
             "channelId": ch.channel_id,
             "channelTitle": ch.channel_title,
             "thumbnailUrl": ch.thumbnail_url,
-            "subscriberCount": 0,
+            "subscriberCount": (ch.goals or {}).get("lastSubs", 0),
         }
         for ch in channels
     ]
@@ -100,6 +100,81 @@ class OnboardingCompleteRequest(BaseModel):
     primary_channel_id: str | None = None
 
 
+def _find_channel(db: Session, user: User, channel_id: str) -> ConnectedChannel | None:
+    """Look up a connected channel by its platform channel_id, falling back to our own row id."""
+    ch = (
+        db.query(ConnectedChannel)
+        .filter(ConnectedChannel.user_id == user.id, ConnectedChannel.channel_id == channel_id)
+        .first()
+    )
+    if ch:
+        return ch
+    try:
+        ch_uuid = uuid.UUID(channel_id)
+    except ValueError:
+        return None
+    return (
+        db.query(ConnectedChannel)
+        .filter(ConnectedChannel.user_id == user.id, ConnectedChannel.id == ch_uuid)
+        .first()
+    )
+
+
+def _compute_channel_progress(goals: dict) -> dict:
+    """Real progress toward a channel's goals, from cached live stats + elapsed time.
+
+    Returns {} when there isn't enough saved data (no target/deadline yet) to
+    compute anything meaningful.
+    """
+    target_views = goals.get("targetViews")
+    target_subs = goals.get("targetSubs")
+    target_date_str = goals.get("targetDate")
+    current_views = goals.get("lastViews")
+    current_subs = goals.get("lastSubs")
+
+    if not target_date_str or (target_views is None and target_subs is None):
+        return {}
+
+    try:
+        target_date = datetime.fromisoformat(target_date_str)
+    except (ValueError, TypeError):
+        return {}
+
+    start_date_str = goals.get("targetStartDate")
+    start_date = datetime.fromisoformat(start_date_str) if start_date_str else target_date - timedelta(days=90)
+
+    total_seconds = (target_date - start_date).total_seconds()
+    elapsed_seconds = (datetime.utcnow() - start_date).total_seconds()
+    expected_fraction = max(0.0, min(1.0, elapsed_seconds / total_seconds)) if total_seconds > 0 else 1.0
+
+    views_progress = current_views / target_views if target_views and current_views is not None else None
+    subs_progress = current_subs / target_subs if target_subs and current_subs is not None else None
+
+    result: dict[str, Any] = {
+        "currentViews": current_views,
+        "currentSubs": current_subs,
+        "viewsProgressPct": round(views_progress * 100, 1) if views_progress is not None else None,
+        "subsProgressPct": round(subs_progress * 100, 1) if subs_progress is not None else None,
+    }
+
+    progresses = [p for p in (views_progress, subs_progress) if p is not None]
+    if progresses:
+        actual_fraction = sum(progresses) / len(progresses)
+        result["velocityPercent"] = (
+            round(((actual_fraction - expected_fraction) / expected_fraction) * 100, 1)
+            if expected_fraction > 0.001
+            else 0.0
+        )
+        if actual_fraction >= expected_fraction + 0.03:
+            result["pacingLabel"] = "Pacing Ahead"
+        elif actual_fraction <= expected_fraction - 0.03:
+            result["pacingLabel"] = "Pacing Behind"
+        else:
+            result["pacingLabel"] = "On Track"
+
+    return result
+
+
 @router.get("")
 def list_channels(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     channels = (
@@ -108,17 +183,87 @@ def list_channels(user: User = Depends(get_current_user), db: Session = Depends(
         .order_by(ConnectedChannel.created_at.asc())
         .all()
     )
-    return [
-        {
+
+    live_stats: dict[str, dict] = {}
+    try:
+        token = get_valid_access_token(db, user)
+        for ch_stats in fetch_user_youtube_channels(token):
+            live_stats[ch_stats["channelId"]] = ch_stats
+    except Exception:
+        pass
+
+    result = []
+    for ch in channels:
+        goals = dict(ch.goals or {})
+        live = live_stats.get(ch.channel_id)
+        if live:
+            goals["lastViews"] = live["viewCount"]
+            goals["lastSubs"] = live["subscriberCount"]
+            goals["statsUpdatedAt"] = datetime.utcnow().isoformat()
+            ch.goals = goals
+            ch.updated_at = datetime.utcnow()
+
+            last_snapshot = (
+                db.query(ChannelStatsSnapshot)
+                .filter(ChannelStatsSnapshot.channel_id == ch.id)
+                .order_by(ChannelStatsSnapshot.captured_at.desc())
+                .first()
+            )
+            if not last_snapshot or last_snapshot.captured_at < datetime.utcnow() - timedelta(hours=12):
+                db.add(
+                    ChannelStatsSnapshot(
+                        id=uuid.uuid4(),
+                        channel_id=ch.id,
+                        views=live["viewCount"],
+                        subscribers=live["subscriberCount"],
+                        video_count=live["videoCount"],
+                        captured_at=datetime.utcnow(),
+                    )
+                )
+
+        result.append({
             "id": str(ch.id),
             "platform": ch.platform,
             "channelId": ch.channel_id,
             "channelTitle": ch.channel_title,
             "thumbnailUrl": ch.thumbnail_url,
-            "goals": ch.goals or {},
+            "goals": goals,
             "createdAt": ch.created_at.isoformat() if ch.created_at else None,
+            **_compute_channel_progress(goals),
+        })
+
+    if live_stats:
+        db.commit()
+
+    return result
+
+
+@router.get("/{channel_id}/history")
+def get_channel_history(
+    channel_id: str,
+    days: int = 30,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ch = _find_channel(db, user, channel_id)
+    if not ch:
+        raise HTTPException(404, "Channel not found")
+
+    since = datetime.utcnow() - timedelta(days=days)
+    snapshots = (
+        db.query(ChannelStatsSnapshot)
+        .filter(ChannelStatsSnapshot.channel_id == ch.id, ChannelStatsSnapshot.captured_at >= since)
+        .order_by(ChannelStatsSnapshot.captured_at.asc())
+        .all()
+    )
+    return [
+        {
+            "capturedAt": s.captured_at.isoformat(),
+            "views": s.views,
+            "subscribers": s.subscribers,
+            "videoCount": s.video_count,
         }
-        for ch in channels
+        for s in snapshots
     ]
 
 
@@ -180,29 +325,17 @@ def update_channel_goals(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    ch = (
-        db.query(ConnectedChannel)
-        .filter(ConnectedChannel.user_id == user.id, ConnectedChannel.channel_id == channel_id)
-        .first()
-    )
-    if not ch:
-        try:
-            ch_uuid = uuid.UUID(channel_id)
-            ch = (
-                db.query(ConnectedChannel)
-                .filter(ConnectedChannel.user_id == user.id, ConnectedChannel.id == ch_uuid)
-                .first()
-            )
-        except ValueError:
-            pass
-
+    ch = _find_channel(db, user, channel_id)
     if not ch:
         raise HTTPException(404, "Channel not found")
 
+    existing_goals = ch.goals or {}
     ch.goals = {
+        **existing_goals,
         "targetViews": req.target_views,
         "targetSubs": req.target_subs,
         "targetDate": req.target_date,
+        "targetStartDate": existing_goals.get("targetStartDate") or datetime.utcnow().isoformat(),
     }
     ch.updated_at = datetime.utcnow()
     db.commit()

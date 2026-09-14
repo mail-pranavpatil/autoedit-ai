@@ -1,11 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/session_manager.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/glass_container.dart';
 import '../../../core/widgets/ios_pill_navbar.dart';
+import '../../../core/widgets/trend_sparkline.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../auth/services/auth_service.dart';
 import '../../onboarding/models/onboarding_models.dart';
@@ -48,6 +50,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ];
 
   List<dynamic> _projects = [];
+  List<dynamic> _history = [];
 
   @override
   void initState() {
@@ -62,10 +65,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final channelsRes = await ApiClient.get('/api/channels').catchError((_) => []);
       final projectsRes = await ApiClient.get('/api/projects').catchError((_) => []);
 
+      final channels = channelsRes is List ? channelsRes : [];
+      List<dynamic> history = [];
+      if (channels.isNotEmpty && channels.first is Map && channels.first['id'] != null) {
+        final historyRes = await ApiClient
+            .get('/api/channels/${channels.first['id']}/history')
+            .catchError((_) => []);
+        history = historyRes is List ? historyRes : [];
+      }
+
       setState(() {
         _user = user;
-        _channels = channelsRes is List ? channelsRes : [];
+        _channels = channels;
         _projects = projectsRes is List ? projectsRes : [];
+        _history = history;
         _isLoading = false;
       });
 
@@ -187,21 +200,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return 'My YouTube Channel';
   }
 
-  Map<String, dynamic> get _activeGoals {
-    if (_channels.isNotEmpty && _channels.first['goals'] is Map) {
-      return _channels.first['goals'] as Map<String, dynamic>;
+  Map<String, dynamic> get _activeChannel {
+    if (_channels.isNotEmpty && _channels.first is Map) {
+      return _channels.first as Map<String, dynamic>;
     }
     return {};
   }
 
+  Map<String, dynamic> get _activeGoals {
+    if (_activeChannel['goals'] is Map) {
+      return _activeChannel['goals'] as Map<String, dynamic>;
+    }
+    return {};
+  }
+
+  bool get _hasGoals => _activeGoals['targetViews'] != null || _activeGoals['targetSubs'] != null;
+  bool get _hasLiveStats => _currentViews != null || _currentSubs != null;
+
   int get _targetViews => (_activeGoals['targetViews'] as num?)?.toInt() ?? 50000;
   int get _targetSubs => (_activeGoals['targetSubs'] as num?)?.toInt() ?? 10000;
-  String get _targetDate => (_activeGoals['targetDate'] as String?) ?? 'December 31, 2026';
+  String? get _targetDate => _activeGoals['targetDate'] as String?;
+
+  int? get _currentViews => (_activeChannel['currentViews'] as num?)?.toInt();
+  int? get _currentSubs => (_activeChannel['currentSubs'] as num?)?.toInt();
+  double? get _velocityPercent => (_activeChannel['velocityPercent'] as num?)?.toDouble();
+  String? get _pacingLabel => _activeChannel['pacingLabel'] as String?;
 
   String _formatNumber(int n) {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
     return n.toString();
+  }
+
+  String _formatDate(String isoDate) {
+    try {
+      return DateFormat('MMMM d, yyyy').format(DateTime.parse(isoDate));
+    } catch (_) {
+      return isoDate;
+    }
   }
 
 
@@ -354,67 +390,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 20),
 
           // Growth Goals Glass Card
-          GlassContainer(
-            padding: const EdgeInsets.all(18),
-            borderRadius: 22,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(CupertinoIcons.chart_pie_fill,
-                            color: AppTheme.primaryLight, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'Quarterly Goal Progress',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
+          if (!_hasGoals)
+            _buildGoalsEmptyState()
+          else if (!_hasLiveStats)
+            _buildStatsUnavailableCard()
+          else
+            GlassContainer(
+              padding: const EdgeInsets.all(18),
+              borderRadius: 22,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(CupertinoIcons.chart_pie_fill,
+                              color: AppTheme.primaryLight, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Quarterly Goal Progress',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(8),
+                        ],
                       ),
-                      child: const Text(
-                        'VELOCITY +24% 🚀',
-                        style: TextStyle(
-                          color: AppTheme.primaryLight,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                      _buildVelocityBadge(),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
 
-                _buildGoalProgress(
-                  label: 'Channel Views (Target: ${_formatNumber(_targetViews)})',
-                  current: (_targetViews * 0.62).toInt(),
-                  target: _targetViews,
-                  color: AppTheme.primary,
-                ),
-                const SizedBox(height: 14),
+                  _buildGoalProgress(
+                    label: 'Channel Views (Target: ${_formatNumber(_targetViews)})',
+                    current: _currentViews ?? 0,
+                    target: _targetViews,
+                    color: AppTheme.primary,
+                  ),
+                  const SizedBox(height: 14),
 
-                _buildGoalProgress(
-                  label: 'Channel Subscribers (Target: ${_formatNumber(_targetSubs)})',
-                  current: (_targetSubs * 0.74).toInt(),
-                  target: _targetSubs,
-                  color: AppTheme.accent,
-                ),
-              ],
+                  _buildGoalProgress(
+                    label: 'Channel Subscribers (Target: ${_formatNumber(_targetSubs)})',
+                    current: _currentSubs ?? 0,
+                    target: _targetSubs,
+                    color: AppTheme.accent,
+                  ),
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 20),
 
           // Primary Quick Action: Camera Roll Import
@@ -645,79 +671,152 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 20),
 
-          GlassContainer(
-            borderRadius: 22,
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _activeChannelTitle,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppTheme.success.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'Pacing Ahead',
-                        style: TextStyle(
-                          color: AppTheme.success,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+          if (!_hasGoals)
+            _buildGoalsEmptyState()
+          else if (!_hasLiveStats)
+            _buildStatsUnavailableCard()
+          else
+            GlassContainer(
+              borderRadius: 22,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _activeChannelTitle,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                _buildGoalProgress(
-                  label: 'Quarterly Views (Target: ${_formatNumber(_targetViews)})',
-                  current: (_targetViews * 0.62).toInt(),
-                  target: _targetViews,
-                  color: AppTheme.primary,
-                ),
-                const SizedBox(height: 16),
-                _buildGoalProgress(
-                  label: 'Subscribers (Target: ${_formatNumber(_targetSubs)})',
-                  current: (_targetSubs * 0.74).toInt(),
-                  target: _targetSubs,
-                  color: AppTheme.accent,
-                ),
-                const SizedBox(height: 18),
-                const Divider(color: AppTheme.glassBorder),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Deadline Target:',
-                      style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-                    ),
-                    Text(
-                      _targetDate,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.primaryLight,
+                      const SizedBox(width: 8),
+                      _buildPacingBadge(),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  _buildGoalProgress(
+                    label: 'Quarterly Views (Target: ${_formatNumber(_targetViews)})',
+                    current: _currentViews ?? 0,
+                    target: _targetViews,
+                    color: AppTheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildGoalProgress(
+                    label: 'Subscribers (Target: ${_formatNumber(_targetSubs)})',
+                    current: _currentSubs ?? 0,
+                    target: _targetSubs,
+                    color: AppTheme.accent,
+                  ),
+                  const SizedBox(height: 18),
+                  const Divider(color: AppTheme.glassBorder),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Deadline Target:',
+                        style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      Text(
+                        _targetDate != null ? _formatDate(_targetDate!) : '—',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryLight,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
+
+          if (_hasGoals) ...[
+            const SizedBox(height: 20),
+            _buildTrendSection(),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildTrendSection() {
+    if (_history.length < 2) {
+      return GlassContainer(
+        padding: const EdgeInsets.all(20),
+        borderRadius: 18,
+        child: const Column(
+          children: [
+            Icon(CupertinoIcons.graph_square, color: AppTheme.primaryLight, size: 34),
+            SizedBox(height: 10),
+            Text(
+              'Growth Trend',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Check back tomorrow — we started tracking your growth from today.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final views = _history.map((h) => ((h['views'] as num?) ?? 0).toDouble()).toList();
+    final subs = _history.map((h) => ((h['subscribers'] as num?) ?? 0).toDouble()).toList();
+
+    return GlassContainer(
+      padding: const EdgeInsets.all(20),
+      borderRadius: 18,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Growth Trend',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+          ),
+          const SizedBox(height: 16),
+          _buildTrendRow('Views', views, AppTheme.primary),
+          const SizedBox(height: 18),
+          _buildTrendRow('Subscribers', subs, AppTheme.accent),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrendRow(String label, List<double> series, Color color) {
+    final delta = series.last - series.first;
+    final isUp = delta >= 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+            Text(
+              '${isUp ? '+' : ''}${_formatNumber(delta.toInt())}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: isUp ? AppTheme.success : AppTheme.danger,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        TrendSparkline(values: series, color: color),
+      ],
     );
   }
 
@@ -887,13 +986,103 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildVelocityBadge() {
+    final velocity = _velocityPercent;
+    if (velocity == null) return const SizedBox.shrink();
+    final isAhead = velocity >= 0;
+    final color = isAhead ? AppTheme.success : AppTheme.danger;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        'VELOCITY ${isAhead ? '+' : ''}${velocity.toStringAsFixed(0)}% ${isAhead ? '🚀' : '⚠️'}',
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPacingBadge() {
+    final label = _pacingLabel;
+    if (label == null) return const SizedBox.shrink();
+    final color = switch (label) {
+      'Pacing Ahead' => AppTheme.success,
+      'Pacing Behind' => AppTheme.danger,
+      _ => AppTheme.warning,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildGoalsEmptyState() {
+    return GlassContainer(
+      padding: const EdgeInsets.all(20),
+      borderRadius: 18,
+      child: Column(
+        children: [
+          const Icon(CupertinoIcons.chart_pie, color: AppTheme.primaryLight, size: 34),
+          const SizedBox(height: 10),
+          const Text(
+            'No Growth Goals Set',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Set a views and subscriber target during onboarding to track your pacing here.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatsUnavailableCard() {
+    return GlassContainer(
+      padding: const EdgeInsets.all(20),
+      borderRadius: 18,
+      child: Column(
+        children: [
+          const Icon(CupertinoIcons.exclamationmark_triangle, color: AppTheme.warning, size: 34),
+          const SizedBox(height: 10),
+          const Text(
+            'Stats Unavailable',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Reconnect your YouTube channel to pull in live view and subscriber counts.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGoalProgress({
     required String label,
     required int current,
     required int target,
     required Color color,
   }) {
-    final progress = (current / target).clamp(0.0, 1.0);
+    final progress = target > 0 ? (current / target).clamp(0.0, 1.0) : 0.0;
     final percent = (progress * 100).toInt();
 
     return Column(
@@ -902,12 +1091,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
+            const SizedBox(width: 8),
             Text(
-              '$current / $target ($percent%)',
+              '${_formatNumber(current)} / ${_formatNumber(target)} ($percent%)',
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,

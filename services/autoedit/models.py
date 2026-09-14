@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -83,6 +84,19 @@ class ConnectedChannel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped[User] = relationship(back_populates="connected_channels")
+
+
+class ChannelStatsSnapshot(Base):
+    __tablename__ = "channel_stats_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pk)
+    channel_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connected_channels.id", ondelete="CASCADE"), index=True
+    )
+    views: Mapped[int] = mapped_column(BigInteger)
+    subscribers: Mapped[int] = mapped_column(Integer)
+    video_count: Mapped[int] = mapped_column(Integer)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Project(Base):
