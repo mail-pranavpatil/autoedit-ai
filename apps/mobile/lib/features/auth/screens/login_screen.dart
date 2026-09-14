@@ -6,6 +6,7 @@ import '../../dashboard/screens/dashboard_screen.dart';
 import '../services/auth_service.dart';
 import 'signup_screen.dart';
 import 'email_verification_screen.dart';
+import '../../../core/widgets/google_logo.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -313,21 +314,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     icon: Container(
-                      width: 24,
-                      height: 24,
+                      width: 26,
+                      height: 26,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white,
                       ),
-                      child: const Text(
-                        'G',
-                        style: TextStyle(
-                          color: AppTheme.googleRed,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
-                      ),
+                      child: const GoogleLogo(size: 16),
                     ),
                     label: const Text(
                       'Continue with Google',

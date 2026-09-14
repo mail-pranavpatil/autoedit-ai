@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import uuid
+
+logger = logging.getLogger("autoedit")
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
@@ -289,69 +292,75 @@ def google_callback(
     state: str | None = None,
     db: Session = Depends(get_db),
 ):
+    settings = get_settings()
     parsed_state = read_oauth_state(state) if state else {}
     is_ios = bool(parsed_state and parsed_state.get("p") == "ios")
     intent = parsed_state.get("intent") if parsed_state else None
+    target = "channels/youtube/connected" if intent == "youtube_connect" else "auth/callback"
 
     if error or not code:
+        logger.warning("OAuth callback error=%s code_present=%s", error, bool(code))
         if is_ios:
-            target = "channels/youtube/connected" if intent == "youtube_connect" else "auth/callback"
-            return RedirectResponse(f"{settings.ios_redirect_scheme}://{target}?error=oauth")
-        return RedirectResponse(f"{settings.frontend_url}/login?error=oauth")
+            return RedirectResponse(f"{settings.ios_redirect_scheme}://{target}?error={error or 'oauth'}")
+        return RedirectResponse(f"{settings.frontend_url}/login?error={error or 'oauth'}")
 
-    tokens = exchange_code(code)
-    userinfo = fetch_userinfo(tokens["access_token"])
-    user = upsert_user_and_tokens(db, tokens, userinfo)
-    token = create_session_token(str(user.id))
-
-    # Auto-fetch and sync user's YouTube channels
     try:
-        from autoedit.models import ConnectedChannel
-        from autoedit.youtube import fetch_user_youtube_channels
+        tokens = exchange_code(code)
+        userinfo = fetch_userinfo(tokens["access_token"])
+        user = upsert_user_and_tokens(db, tokens, userinfo)
+        token = create_session_token(str(user.id))
 
-        yt_channels = fetch_user_youtube_channels(tokens["access_token"])
-        for ch in yt_channels:
-            existing = (
-                db.query(ConnectedChannel)
-                .filter(ConnectedChannel.user_id == user.id, ConnectedChannel.channel_id == ch["channelId"])
-                .first()
-            )
-            if existing:
-                existing.channel_title = ch["channelTitle"]
-                if ch.get("thumbnailUrl"):
-                    existing.thumbnail_url = ch["thumbnailUrl"]
-                existing.updated_at = datetime.utcnow()
-            else:
-                new_ch = ConnectedChannel(
-                    id=uuid.uuid4(),
-                    user_id=user.id,
-                    platform="youtube",
-                    channel_id=ch["channelId"],
-                    channel_title=ch["channelTitle"],
-                    thumbnail_url=ch.get("thumbnailUrl"),
-                    created_at=datetime.utcnow(),
+        # Auto-fetch and sync user's YouTube channels
+        try:
+            from autoedit.models import ConnectedChannel
+            from autoedit.youtube import fetch_user_youtube_channels
+
+            yt_channels = fetch_user_youtube_channels(tokens["access_token"])
+            for ch in yt_channels:
+                existing = (
+                    db.query(ConnectedChannel)
+                    .filter(ConnectedChannel.user_id == user.id, ConnectedChannel.channel_id == ch["channelId"])
+                    .first()
                 )
-                db.add(new_ch)
-        db.commit()
-    except Exception:
-        pass
+                if existing:
+                    existing.channel_title = ch["channelTitle"]
+                    if ch.get("thumbnailUrl"):
+                        existing.thumbnail_url = ch["thumbnailUrl"]
+                    existing.updated_at = datetime.utcnow()
+                else:
+                    new_ch = ConnectedChannel(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        platform="youtube",
+                        channel_id=ch["channelId"],
+                        channel_title=ch["channelTitle"],
+                        thumbnail_url=ch.get("thumbnailUrl"),
+                        created_at=datetime.utcnow(),
+                    )
+                    db.add(new_ch)
+            db.commit()
+        except Exception as yt_err:
+            logger.warning("Failed to auto-sync YouTube channels in OAuth callback: %s", yt_err)
 
-    if is_ios:
-        if intent == "youtube_connect":
-            return RedirectResponse(f"{settings.ios_redirect_scheme}://channels/youtube/connected?token={token}")
-        return RedirectResponse(f"{settings.ios_redirect_scheme}://auth/callback?token={token}")
+        if is_ios:
+            return RedirectResponse(f"{settings.ios_redirect_scheme}://{target}?token={token}")
 
-    response = RedirectResponse(f"{settings.frontend_url}/dashboard")
-    response.set_cookie(
-        COOKIE_NAME,
-        token,
-        httponly=True,
-        samesite="lax",
-        secure=settings.cookie_secure,
-        max_age=60 * 60 * 24 * 14,
-        path="/",
-    )
-    return response
+        response = RedirectResponse(f"{settings.frontend_url}/dashboard")
+        response.set_cookie(
+            COOKIE_NAME,
+            token,
+            httponly=True,
+            samesite="lax",
+            secure=settings.cookie_secure,
+            max_age=60 * 60 * 24 * 14,
+            path="/",
+        )
+        return response
+    except Exception as e:
+        logger.error("OAuth code exchange / callback failed: %s", e, exc_info=True)
+        if is_ios:
+            return RedirectResponse(f"{settings.ios_redirect_scheme}://{target}?error=oauth_failed")
+        return RedirectResponse(f"{settings.frontend_url}/login?error=oauth_failed")
 
 
 

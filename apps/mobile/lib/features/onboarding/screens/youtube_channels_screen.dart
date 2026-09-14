@@ -5,6 +5,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/onboarding_models.dart';
 import 'goals_screen.dart';
+import '../../../core/widgets/google_logo.dart';
 
 class YouTubeChannelsScreen extends StatefulWidget {
   const YouTubeChannelsScreen({super.key});
@@ -289,13 +290,7 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Image.network(
-                        'https://www.google.com/favicon.ico',
-                        width: 18,
-                        height: 18,
-                        errorBuilder: (context, error, stackTrace) =>
-                            const Icon(Icons.account_circle, size: 18),
-                      ),
+                    : const GoogleLogo(size: 18),
                 label: Text(
                   _isConnectingGoogle ? 'Connecting in Safari...' : 'Connect YouTube with Google',
                   style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textPrimary),

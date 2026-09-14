@@ -1,5 +1,7 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:autoedit_mobile/core/widgets/google_logo.dart';
 import 'package:autoedit_mobile/webview_shell.dart';
 
 void main() {
@@ -38,5 +40,15 @@ void main() {
   test('allows same-origin and non-http(s) navigation through', () {
     expect(classifyNavigation(Uri.parse('https://$host/projects/1'), host), NavigationAction.allow);
     expect(classifyNavigation(Uri.parse('about:blank'), host), NavigationAction.allow);
+  });
+
+  testWidgets('renders GoogleLogo without crashing', (tester) async {
+    await tester.pumpWidget(
+      const Directionality(
+        textDirection: TextDirection.ltr,
+        child: GoogleLogo(size: 24),
+      ),
+    );
+    expect(find.byType(GoogleLogo), findsOneWidget);
   });
 }

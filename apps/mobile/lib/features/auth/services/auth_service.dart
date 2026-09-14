@@ -105,9 +105,23 @@ class AuthService {
       await SessionManager.saveSession(token: token, user: user);
       return user;
     } catch (e) {
-      if (e is SignInWithAppleAuthorizationException &&
-          e.code == AuthorizationErrorCode.canceled) {
-        throw ApiException(400, 'Apple sign in was cancelled');
+      if (e is SignInWithAppleAuthorizationException) {
+        if (e.code == AuthorizationErrorCode.canceled) {
+          throw ApiException(400, 'Apple sign in was cancelled');
+        } else if (e.code == AuthorizationErrorCode.unknown ||
+            e.code == AuthorizationErrorCode.failed) {
+          throw ApiException(
+            400,
+            'Apple Sign-In could not be completed. Please ensure you are signed into an Apple ID in iOS Settings, or continue with Google or Email.',
+          );
+        }
+      }
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('1000') || errStr.contains('authorizationservices')) {
+        throw ApiException(
+          400,
+          'Apple Sign-In could not be completed. Please ensure you are signed into an Apple ID in iOS Settings, or continue with Google or Email.',
+        );
       }
       rethrow;
     }

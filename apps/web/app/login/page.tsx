@@ -11,7 +11,8 @@ function LoginForm() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    if (searchParams.get("error") === "oauth") {
+    const err = searchParams.get("error");
+    if (err === "oauth" || err === "oauth_failed") {
       toast("Google sign in failed or was cancelled.", "err");
     }
   }, [searchParams]);
