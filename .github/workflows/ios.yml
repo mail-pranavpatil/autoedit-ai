@@ -105,6 +105,14 @@ jobs:
           # doesn't leak onto Swift Package plugin targets, which can't take a
           # provisioning profile.
           sed -i '' "s/__TEAM_ID__/$APPLE_TEAM_ID/" ios/Runner.xcodeproj/project.pbxproj
+
+          # Check if the imported provisioning profile contains the Sign In with Apple capability
+          if ! grep -q "com.apple.developer.applesignin" "$RUNNER_TEMP/profile.mobileprovision"; then
+            echo "::warning::Provisioning profile 'Eren - Your Social Media Guy' does not yet include com.apple.developer.applesignin capability."
+            echo "::warning::Enable 'Sign In with Apple' for App ID 'ai.autoedit.app' on developer.apple.com and regenerate the profile to embed this entitlement."
+            sed -i '' '/CODE_SIGN_ENTITLEMENTS = Runner\/Runner.entitlements;/d' ios/Runner.xcodeproj/project.pbxproj
+          fi
+
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
