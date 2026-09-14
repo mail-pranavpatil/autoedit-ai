@@ -1,7 +1,13 @@
+from __future__ import annotations
+
 import base64
 import json
 import uuid
-from pydantic import BaseModel, EmailStr
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from autoedit.auth import (
     exchange_code,
