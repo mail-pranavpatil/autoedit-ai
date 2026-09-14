@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
-import { api, formatIst, type YoutubeUpload } from "@/lib/api";
+import { api, formatIst, mediaUrl, type YoutubeUpload } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { Card } from "@/components/common/Card";
 
 export default function YoutubePage() {
   const [rows, setRows] = useState<YoutubeUpload[] | null>(null);
@@ -49,59 +50,66 @@ export default function YoutubePage() {
           <p className="mt-4 text-sm text-muted">
             {scheduled} scheduled · {rows.length} total
           </p>
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-line">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-panel text-muted">
-                <tr>
-                  <th className="p-3">Title</th>
-                  <th className="p-3">Publish time (IST)</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Project</th>
-                  <th className="p-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-line">
-                    <td className="p-3 font-medium">{row.title || row.filename || "Untitled"}</td>
-                    <td className="p-3">{row.scheduledAt ? formatIst(row.scheduledAt) : "—"}</td>
-                    <td className="p-3">
-                      <StatusBadge status={row.status} />
-                      {row.status === "FAILED" && row.error ? (
-                        <div className="mt-1 max-w-xs text-xs text-red-200/80">{row.error}</div>
-                      ) : null}
-                    </td>
-                    <td className="p-3 text-muted">
-                      {row.projectId ? (
-                        <Link href={`/projects/${row.projectId}`} className="underline">
-                          {row.projectName || "Project"}
-                        </Link>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      {row.projectId && row.videoId ? (
-                        <Link href={`/projects/${row.projectId}/videos/${row.videoId}`} className="text-accent">
-                          Video
-                        </Link>
-                      ) : null}
-                      {row.url ? (
-                        <>
-                          {row.projectId && row.videoId ? <span className="text-muted"> · </span> : null}
-                          <a href={row.url} target="_blank" rel="noreferrer" className="text-accent">
-                            YouTube
-                          </a>
-                        </>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4 space-y-3">
+            {rows.map((row) => (
+              <PublishCard key={row.id} row={row} />
+            ))}
           </div>
         </>
       )}
     </div>
+  );
+}
+
+function PublishCard({ row }: { row: YoutubeUpload }) {
+  return (
+    <Card className="flex gap-3 p-4">
+      <div className="h-20 w-12 shrink-0 overflow-hidden rounded-lg bg-black">
+        {row.thumbnailUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={mediaUrl(row.thumbnailUrl)} alt="" className="h-full w-full object-cover" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 truncate font-medium">{row.title || row.filename || "Untitled"}</div>
+          <StatusBadge status={row.status} />
+        </div>
+        <div className="mt-1 text-sm text-muted">
+          {row.scheduledAt ? `${formatIst(row.scheduledAt)} IST` : "Not scheduled yet"}
+          {row.projectId && (
+            <>
+              {" · "}
+              <Link href={`/projects/${row.projectId}`} className="underline">
+                {row.projectName || "Project"}
+              </Link>
+            </>
+          )}
+        </div>
+        {row.status === "FAILED" && (
+          <div className="mt-1">
+            <p className="text-sm text-red-200/80">Upload didn&apos;t go through.</p>
+            {row.error && (
+              <details className="mt-1 text-xs text-muted">
+                <summary className="cursor-pointer">View technical details</summary>
+                <p className="mt-1 whitespace-pre-wrap">{row.error}</p>
+              </details>
+            )}
+          </div>
+        )}
+        <div className="mt-2 flex gap-3 text-sm">
+          {row.projectId && row.videoId && (
+            <Link href={`/projects/${row.projectId}/videos/${row.videoId}`} className="text-accent">
+              Open video
+            </Link>
+          )}
+          {row.url && (
+            <a href={row.url} target="_blank" rel="noreferrer" className="text-accent">
+              View on YouTube
+            </a>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }

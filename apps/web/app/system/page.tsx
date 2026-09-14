@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/api";
+import { Card } from "@/components/common/Card";
 
 export default function SystemPage() {
   const [health, setHealth] = useState<Record<string, boolean> | null>(null);
@@ -21,10 +22,10 @@ export default function SystemPage() {
       <div className="mt-6 space-y-2">
         {health &&
           Object.entries(health).map(([k, v]) => (
-            <div key={k} className="flex justify-between rounded-xl border border-line bg-panel px-4 py-3">
+            <Card key={k} className="flex justify-between px-4 py-3">
               <span className="capitalize">{k}</span>
               <span className={v ? "text-accent" : "text-red-300"}>{v ? "ok" : "down"}</span>
-            </div>
+            </Card>
           ))}
       </div>
     </div>

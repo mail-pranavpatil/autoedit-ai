@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useState } from "react";
 import { API_URL, api, formatDuration, formatIst, isProcessingStatus, isYoutubePending, type Video } from "@/lib/api";
+import { stageTitle } from "@/lib/stageCopy";
 import { usePolling } from "@/lib/usePolling";
 import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { toast } from "@/components/common/Toast";
 import { ProcessingConsole } from "@/components/video/ProcessingConsole";
+import { Card } from "@/components/common/Card";
 
 export default function VideoDetailPage() {
   const { projectId, videoId } = useParams<{ projectId: string; videoId: string }>();
@@ -51,8 +53,8 @@ export default function VideoDetailPage() {
         <div className="text-xs text-muted">
           <Link href={`/projects/${projectId}`}>Project</Link> / {video.filename}
         </div>
-        <div className="mt-2 flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">{video.filename}</h1>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <h1 className="min-w-0 break-words text-2xl font-semibold">{video.filename}</h1>
           <StatusBadge status={video.status} />
         </div>
         {showConsole && (
@@ -63,20 +65,20 @@ export default function VideoDetailPage() {
         {video.status === "READY" ? (
           <video className="mt-4 w-full max-w-sm rounded-2xl bg-black" controls src={`${API_URL}/api/videos/${video.id}/stream`} />
         ) : !processing ? (
-          <div className="mt-4 rounded-2xl border border-line bg-panel p-8 text-sm text-muted">
+          <Card className="mt-4 p-8 text-sm text-muted">
             Preview appears here after the reel is rendered.
-          </div>
+          </Card>
         ) : null}
       </div>
       <div className="space-y-4">
-        <div className="rounded-2xl border border-line bg-panel p-5 text-sm">
+        <Card className="p-5 text-sm">
           <div>Duration: {formatDuration(video.duration)}</div>
           <div>
             Size: {video.width}×{video.height}
           </div>
-        </div>
+        </Card>
         {video.status === "READY" && (
-          <div className="rounded-2xl border border-line bg-panel p-5 text-sm">
+          <Card className="p-5 text-sm">
             <h2 className="flex items-center gap-2 font-medium">
               YouTube
               {video.youtube?.status ? <StatusBadge status={video.youtube.status} /> : null}
@@ -94,7 +96,13 @@ export default function VideoDetailPage() {
               </>
             ) : video.youtube?.status === "FAILED" ? (
               <>
-                <p className="mt-2 text-red-200/80">{video.youtube.error || "Upload failed"}</p>
+                <p className="mt-2 text-red-200/80">Upload didn&apos;t go through.</p>
+                {video.youtube.error && (
+                  <details className="mt-2 text-xs text-muted">
+                    <summary className="cursor-pointer">View technical details</summary>
+                    <p className="mt-1 whitespace-pre-wrap">{video.youtube.error}</p>
+                  </details>
+                )}
                 <Button
                   className="mt-4"
                   onClick={async () => {
@@ -131,12 +139,19 @@ export default function VideoDetailPage() {
                 </Button>
               </>
             )}
-          </div>
+          </Card>
         )}
         {video.status === "FAILED" && (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-5">
-            <p className="font-medium">Failed at {video.failedStage}</p>
-            <p className="mt-2 text-sm text-red-200/80">{video.errorMessage}</p>
+            <p className="font-medium">
+              {stageTitle(video.failedStage) ? `Couldn't finish — trouble during "${stageTitle(video.failedStage)}"` : "Couldn't finish"}
+            </p>
+            {video.errorMessage && (
+              <details className="mt-2 text-xs text-muted">
+                <summary className="cursor-pointer">View technical details</summary>
+                <p className="mt-1 whitespace-pre-wrap text-red-200/80">{video.errorMessage}</p>
+              </details>
+            )}
             <Button
               className="mt-4"
               onClick={async () => {
@@ -149,13 +164,13 @@ export default function VideoDetailPage() {
           </div>
         )}
         {plan && (
-          <div className="rounded-2xl border border-line bg-panel p-5 text-sm">
+          <Card className="p-5 text-sm">
             <h2 className="font-medium">AI edit summary</h2>
             <p className="mt-2 text-muted">{plan.video_summary}</p>
             <p className="mt-2 text-muted">
               Tone: {plan.tone} · Music: {plan.music_category} · {plan.segments?.length || 0} segments
             </p>
-          </div>
+          </Card>
         )}
         <div className="flex gap-2">
           {video.status !== "READY" && video.status !== "FAILED" && !processing && (

@@ -9,6 +9,7 @@ import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/common/EmptyState";
 import { toast } from "@/components/common/Toast";
+import { Card } from "@/components/common/Card";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
@@ -70,17 +71,17 @@ export default function ProjectDetailPage() {
           </Button>
         </div>
       </div>
-      <div className="mt-6 grid gap-3 sm:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           ["Total", project.totalVideos],
           ["Ready", project.readyVideos],
           ["Processing", project.processingVideos],
           ["Failed", project.failedVideos],
         ].map(([l, v]) => (
-          <div key={String(l)} className="rounded-xl border border-line bg-panel p-4">
+          <Card key={String(l)} className="p-4">
             <div className="text-xs text-muted">{l}</div>
             <div className="text-xl font-semibold">{v}</div>
-          </div>
+          </Card>
         ))}
       </div>
       {project.processingVideos > 0 && (

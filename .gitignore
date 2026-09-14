@@ -18,4 +18,5 @@ htmlcov/
 alembic/versions/*.pyc
 *.log
 .cursor/
-
+.claude/
+*.tsbuildinfo

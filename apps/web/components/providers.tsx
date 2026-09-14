@@ -6,9 +6,14 @@ import { api, type User } from "@/lib/api";
 import { AppShell } from "@/components/layout/AppShell";
 import { ToastHost } from "@/components/common/Toast";
 
-const AuthContext = createContext<{ user: User | null; refresh: () => Promise<void> }>({
+const AuthContext = createContext<{
+  user: User | null;
+  refresh: () => Promise<void>;
+  loginDemo: () => void;
+}>({
   user: null,
   refresh: async () => {},
+  loginDemo: () => {},
 });
 
 export function useAuth() {
@@ -21,7 +26,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
+  function loginDemo() {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("eren_demo_mode", "true");
+      setUser({ id: "demo-1", email: "creator@eren.ai", name: "Eren Creator", driveConnected: true });
+      router.replace("/dashboard");
+    }
+  }
+
   async function refresh() {
+    if (typeof window !== "undefined" && localStorage.getItem("eren_demo_mode") === "true") {
+      setUser({ id: "demo-1", email: "creator@eren.ai", name: "Eren Creator", driveConnected: true });
+      return;
+    }
     try {
       const me = await api<User>("/api/auth/me");
       setUser(me);
@@ -46,7 +63,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   if (pathname === "/login") {
     return (
-      <AuthContext.Provider value={{ user, refresh }}>
+      <AuthContext.Provider value={{ user, refresh, loginDemo }}>
         {children}
         <ToastHost />
       </AuthContext.Provider>
@@ -58,7 +75,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const editor = pathname.includes("/editor");
 
   return (
-    <AuthContext.Provider value={{ user, refresh }}>
+    <AuthContext.Provider value={{ user, refresh, loginDemo }}>
       {editor ? children : <AppShell>{children}</AppShell>}
       <ToastHost />
     </AuthContext.Provider>

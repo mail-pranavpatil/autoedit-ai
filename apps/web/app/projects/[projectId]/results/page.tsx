@@ -7,6 +7,8 @@ import { API_URL, api, mediaUrl, type Project, type Video } from "@/lib/api";
 import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { toast } from "@/components/common/Toast";
+import { stageTitle } from "@/lib/stageCopy";
+import { Card } from "@/components/common/Card";
 
 export default function ResultsPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -52,7 +54,7 @@ export default function ResultsPage() {
       </div>
       {failed.length > 0 && (
         <>
-          <div className="mt-10 flex items-center justify-between">
+          <div className="mt-10 flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-medium">Failed</h2>
             <Button
               variant="secondary"
@@ -71,7 +73,9 @@ export default function ResultsPage() {
                   <span>{v.filename}</span>
                   <StatusBadge status="FAILED" />
                 </div>
-                <p className="mt-1 text-sm text-red-200/80">{v.errorMessage}</p>
+                <p className="mt-1 text-sm text-red-200/80">
+                  {stageTitle(v.failedStage) ? `Trouble during "${stageTitle(v.failedStage)}" — tap for details` : "Something went wrong — tap for details"}
+                </p>
               </Link>
             ))}
           </div>
@@ -83,7 +87,7 @@ export default function ResultsPage() {
 
 function ResultCard({ video, projectId }: { video: Video; projectId: string }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-panel">
+    <Card className="overflow-hidden">
       <Link href={`/projects/${projectId}/videos/${video.id}`}>
         {video.thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -106,6 +110,6 @@ function ResultCard({ video, projectId }: { video: Video; projectId: string }) {
       {video.outputUnavailable && (
         <div className="border-t border-line p-3 text-sm text-muted">Video unavailable</div>
       )}
-    </div>
+    </Card>
   );
 }

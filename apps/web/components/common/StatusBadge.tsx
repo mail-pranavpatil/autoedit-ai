@@ -13,6 +13,8 @@ const colors: Record<string, string> = {
   SCHEDULED: "bg-emerald-500/20 text-emerald-300",
   PENDING: "bg-sky-500/20 text-sky-300",
   UPLOADING: "bg-amber-500/20 text-amber-300",
+  PROCESSING: "bg-amber-500/20 text-amber-300",
+  DRAFT: "bg-white/10 text-muted",
 };
 
 export function StatusBadge({ status }: { status: string }) {

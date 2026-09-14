@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { BrollAsset, CaptionPhrase, EditPlan, EditSegment } from "@/lib/api";
+import { Video, Film, MessageSquare, Music } from "lucide-react";
 
 export type Selection =
   | { type: "aroll" }
@@ -47,7 +48,7 @@ export function EditorTimeline({
   });
 
   return (
-    <div className="flex h-full flex-col bg-[#12141a]">
+    <div className="flex h-full flex-col bg-panel">
       <div
         className="relative flex-1 overflow-x-auto overflow-y-hidden px-3 py-2"
         onClick={(e) => {
@@ -63,10 +64,10 @@ export function EditorTimeline({
               </div>
             ))}
           </div>
-          <Track label="A-roll" color="bg-sky-500/80" selected={selection?.type === "aroll"} onSelect={() => onSelect({ type: "aroll" })}>
+          <Track label="A-roll" icon={Video} color="bg-teal-accent/80" iconColor="text-teal-accent" selected={selection?.type === "aroll"} onSelect={() => onSelect({ type: "aroll" })}>
             <Clip start={0} end={dur} duration={dur} color="bg-sky-600" label="Talking head" />
           </Track>
-          <Track label="B-roll" color="bg-violet-500/80">
+          <Track label="B-roll" icon={Film} color="bg-lavender-accent/80" iconColor="text-lavender-accent">
             {brollClips.map((clip) => {
               if (!clip) return null;
               const selected = selection?.type === "broll" && selection.index === clip.index;
@@ -85,7 +86,7 @@ export function EditorTimeline({
               );
             })}
           </Track>
-          <Track label="Captions" color="bg-amber-500/80">
+          <Track label="Captions" icon={MessageSquare} color="bg-yellow-accent/80" iconColor="text-yellow-accent">
             {phrases.map((ph, i) => {
               const selected = selection?.type === "caption" && selection.index === i;
               return (
@@ -101,7 +102,7 @@ export function EditorTimeline({
               );
             })}
           </Track>
-          <Track label="Music" color="bg-emerald-500/80" selected={selection?.type === "music"} onSelect={() => onSelect({ type: "music" })}>
+          <Track label="Music" icon={Music} color="bg-accent/80" iconColor="text-accent" selected={selection?.type === "music"} onSelect={() => onSelect({ type: "music" })}>
             <Clip start={0} end={dur} duration={dur} color="bg-emerald-600" label="Music bed" />
           </Track>
           <div
@@ -116,14 +117,18 @@ export function EditorTimeline({
 
 function Track({
   label,
+  icon: Icon,
   children,
   color,
+  iconColor,
   selected,
   onSelect,
 }: {
   label: string;
+  icon?: React.ComponentType<{ className?: string }>;
   children: ReactNode;
   color: string;
+  iconColor?: string;
   selected?: boolean;
   onSelect?: () => void;
 }) {
@@ -132,8 +137,9 @@ function Track({
       <button
         type="button"
         onClick={onSelect}
-        className={`w-20 shrink-0 truncate rounded-l px-2 text-left text-[10px] uppercase tracking-wide ${selected ? "bg-white/15 text-white" : "bg-white/5 text-white/50"}`}
+        className={`flex w-20 shrink-0 items-center gap-1 truncate rounded-l px-2 text-left text-[10px] uppercase tracking-wide transition-colors duration-150 ${selected ? "bg-white/15 text-white" : "bg-white/5 text-white/50"}`}
       >
+        {Icon && <Icon className={`h-3 w-3 ${iconColor || ''}`} />}
         <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${color}`} />
         {label}
       </button>

@@ -5,6 +5,8 @@ import { API_URL, api } from "@/lib/api";
 import { Button } from "@/components/common/Button";
 import { EmptyState } from "@/components/common/EmptyState";
 import { toast } from "@/components/common/Toast";
+import { Card } from "@/components/common/Card";
+import { Music, Zap } from "lucide-react";
 
 type Asset = {
   id: string;
@@ -37,11 +39,15 @@ export default function AssetsPage() {
         <Button onClick={() => setOpen(true)}>Upload</Button>
       </div>
       <div className="mt-4 flex gap-2">
-        {(["music", "sfx"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`rounded-full px-4 py-1 ${tab === t ? "bg-white/10" : "text-muted"}`}>
-            {t.toUpperCase()}
-          </button>
-        ))}
+        {(["music", "sfx"] as const).map((t) => {
+          const Icon = t === "music" ? Music : Zap;
+          return (
+            <button key={t} onClick={() => setTab(t)} className={`flex items-center gap-1.5 rounded-full px-4 py-1 transition-colors duration-150 ${tab === t ? "bg-white/10" : "text-muted hover:text-white"}`}>
+              <Icon className="h-3.5 w-3.5" />
+              {t.toUpperCase()}
+            </button>
+          );
+        })}
       </div>
       {list.length === 0 ? (
         <div className="mt-8">
@@ -50,7 +56,7 @@ export default function AssetsPage() {
       ) : (
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           {list.map((a) => (
-            <div key={a.id} className="rounded-2xl border border-line bg-panel p-4">
+            <Card key={a.id} className="p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">{a.name}</div>
@@ -80,7 +86,7 @@ export default function AssetsPage() {
                   Delete
                 </button>
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -115,7 +121,7 @@ function UploadModal({ tab, onClose, onDone }: { tab: string; onClose: () => voi
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-line bg-panel p-6">
+      <Card className="w-full max-w-md p-6">
         <h2 className="text-lg font-semibold">Upload {tab}</h2>
         <input className="mt-4 w-full rounded-xl border border-line bg-ink px-3 py-2" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
         <input className="mt-3 w-full text-sm" type="file" accept="audio/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
@@ -127,7 +133,7 @@ function UploadModal({ tab, onClose, onDone }: { tab: string; onClose: () => voi
             Upload
           </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

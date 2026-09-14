@@ -9,6 +9,8 @@ import { Button } from "@/components/common/Button";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { toast } from "@/components/common/Toast";
 import { SmoothPercent } from "@/lib/useSmoothProgress";
+import { stageTitle } from "@/lib/stageCopy";
+import { Card } from "@/components/common/Card";
 
 export default function QueuePage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -33,7 +35,7 @@ export default function QueuePage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs text-muted">
             <Link href={`/projects/${projectId}`}>{data.name}</Link> / Queue
@@ -51,7 +53,7 @@ export default function QueuePage() {
           Retry failed
         </Button>
       </div>
-      <div className="mt-6 rounded-2xl border border-line bg-panel p-5">
+      <Card className="mt-6 p-5">
         <div className="flex justify-between text-sm">
           <span>
             {data.readyVideos} ready · {data.failedVideos} failed · {data.processingVideos} processing
@@ -61,7 +63,7 @@ export default function QueuePage() {
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
           <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
         </div>
-      </div>
+      </Card>
       <div className="mt-6 overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-left text-sm">
           <thead className="bg-panel text-muted">
@@ -80,7 +82,7 @@ export default function QueuePage() {
                 <td className="p-3">
                   <StatusBadge status={v.status} />
                 </td>
-                <td className="p-3 text-muted">{v.currentStage || "—"}</td>
+                <td className="p-3 text-muted">{stageTitle(v.currentStage) || "—"}</td>
                 <td className="p-3">
                   <SmoothPercent progress={v.progress || 0} status={v.status} />
                 </td>
@@ -116,8 +118,13 @@ export default function QueuePage() {
         <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={() => setDrawer(null)}>
           <div className="h-full w-full max-w-md bg-panel p-6" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold">{drawer.filename}</h2>
-            <p className="mt-2 text-sm text-muted">{drawer.currentStage}</p>
-            {drawer.errorMessage && <p className="mt-4 text-sm text-red-300">{drawer.errorMessage}</p>}
+            <p className="mt-2 text-sm text-muted">{stageTitle(drawer.currentStage)}</p>
+            {drawer.errorMessage && (
+              <details className="mt-4 text-sm text-red-300">
+                <summary className="cursor-pointer">View technical details</summary>
+                <p className="mt-1 whitespace-pre-wrap text-xs text-red-200/80">{drawer.errorMessage}</p>
+              </details>
+            )}
             <div className="mt-6 flex gap-2">
               {drawer.status === "FAILED" && (
                 <Button

@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, type Project } from "@/lib/api";
 import { Button } from "@/components/common/Button";
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/common/EmptyState";
-import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
 import { toast } from "@/components/common/Toast";
+import { Card } from "@/components/common/Card";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
 
   async function load() {
@@ -38,15 +39,15 @@ export default function DashboardPage() {
     { total: 0, ready: 0, processing: 0, failed: 0 }
   );
   const active = projects.filter((p) => p.processingVideos > 0);
+  const needsAttention = projects.filter((p) => p.failedVideos > 0);
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="text-sm text-muted">Import videos. Process. Download finished reels.</p>
-        </div>
-        <div className="flex gap-2">
+      <Card className="p-6">
+        <h1 className="text-2xl font-semibold">What are we creating today?</h1>
+        <p className="mt-1 text-sm text-muted">Upload your footage and let AutoEdit AI handle the edit.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={() => router.push("/create")}>Create a video</Button>
           {totals.processing > 0 && (
             <Button
               variant="danger"
@@ -67,22 +68,33 @@ export default function DashboardPage() {
               {stopping ? "Stopping…" : "Stop all processing"}
             </Button>
           )}
-          <Button onClick={() => setOpen(true)}>New Project</Button>
         </div>
-      </div>
-      <div className="mt-6 grid gap-3 sm:grid-cols-4">
+      </Card>
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           ["Videos", totals.total],
           ["Ready", totals.ready],
           ["Processing", totals.processing],
           ["Failed", totals.failed],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-line bg-panel p-4">
+          <Card key={label} className="p-4">
             <div className="text-xs text-muted">{label}</div>
             <div className="mt-1 text-2xl font-semibold">{value}</div>
-          </div>
+          </Card>
         ))}
       </div>
+      {needsAttention.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 font-medium">Needs attention</h2>
+          <div className="space-y-2">
+            {needsAttention.map((p) => (
+              <Link key={p.id} href={`/projects/${p.id}/queue`} className="block rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-200">
+                {p.name} — {p.failedVideos} video{p.failedVideos === 1 ? "" : "s"} couldn&apos;t finish · retry available
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
       {active.length > 0 && (
         <section className="mt-8">
           <h2 className="mb-3 font-medium">Active processing</h2>
@@ -101,12 +113,12 @@ export default function DashboardPage() {
           <EmptyState
             title="No projects yet"
             body="Create a project, connect Drive, and import a folder of talking-head clips."
-            action={<Button onClick={() => setOpen(true)}>New Project</Button>}
+            action={<Button onClick={() => router.push("/create")}>Create a video</Button>}
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {projects.map((p) => (
-              <Link key={p.id} href={`/projects/${p.id}`} className="rounded-2xl border border-line bg-panel p-5 hover:border-accent/40">
+              <Link key={p.id} href={`/projects/${p.id}`} className="block rounded-2xl border border-line bg-panel p-5 transition-colors duration-150 hover:border-accent/40">
                 <div className="font-medium">{p.name}</div>
                 <div className="mt-2 text-sm text-muted">
                   {p.totalVideos} videos · {p.readyVideos} ready · {p.failedVideos} failed
@@ -116,7 +128,6 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
-      <CreateProjectModal open={open} onClose={() => setOpen(false)} onCreated={load} />
     </div>
   );
 }
