@@ -39,7 +39,7 @@ jobs:
         run: flutter test
 
       - name: Compile (unsigned, debug)
-        run: flutter build ios --no-codesign --debug
+        run: flutter build ios --no-codesign --debug --build-number=${{ github.run_number }}
 
       - name: Upload unsigned .app
         uses: actions/upload-artifact@v4
@@ -97,7 +97,7 @@ jobs:
       - name: Prepare Flutter iOS build artifacts
         env:
           AUTOEDIT_APP_URL: ${{ secrets.AUTOEDIT_APP_URL }}
-        run: flutter build ios --release --no-codesign --dart-define=AUTOEDIT_APP_URL=$AUTOEDIT_APP_URL
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }} --dart-define=AUTOEDIT_APP_URL=$AUTOEDIT_APP_URL
 
       - name: Archive
         env:
