@@ -43,6 +43,7 @@ def serialize_youtube_listing(row: YoutubeUpload) -> dict:
         "id": str(row.id),
         **data,
         "filename": video.filename if video else None,
+        "thumbnailUrl": f"/api/media/thumb/{video.id}" if video and video.thumbnail_path else None,
         "videoId": str(video.id) if video else None,
         "projectId": str(project.id) if project else None,
         "projectName": project.name if project else None,

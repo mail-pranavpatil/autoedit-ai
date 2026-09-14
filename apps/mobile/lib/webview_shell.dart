@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
@@ -7,8 +8,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'app_config.dart';
 import 'download_queue.dart';
+import 'native_upload.dart';
 
-/// A bare WebView can't do three things the hosted web app needs:
+/// A bare WebView can't do four things the hosted web app needs:
 ///   1. Google OAuth - Google rejects its consent screen inside an embedded
 ///      webview ("disallowed_useragent"). Run it in an external auth session
 ///      (ASWebAuthenticationSession on iOS) and inject the returned session
@@ -18,6 +20,9 @@ import 'download_queue.dart';
 ///      ourselves and hand it to the share sheet (see [DownloadQueue]).
 ///   3. External links (e.g. a YouTube watch URL) - open in Safari instead of
 ///      replacing the app's webview.
+///   4. Picking footage from Photos/Files - the web page can't reach the
+///      native picker UI on its own, so it calls the `ErenNative` JS channel
+///      and we upload the result (see [NativeUpload]).
 class WebViewShell extends StatefulWidget {
   const WebViewShell({super.key});
 
@@ -51,6 +56,7 @@ NavigationAction classifyNavigation(Uri uri, String appHost) {
 class _WebViewShellState extends State<WebViewShell> {
   late final WebViewController _controller;
   final _downloads = DownloadQueue();
+  final _uploads = NativeUpload();
 
   @override
   void initState() {
@@ -59,7 +65,31 @@ class _WebViewShellState extends State<WebViewShell> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF0F1115))
       ..setNavigationDelegate(NavigationDelegate(onNavigationRequest: _onNavigationRequest))
+      ..addJavaScriptChannel('ErenNative', onMessageReceived: (m) => unawaited(_onNativeMessage(m.message)))
       ..loadRequest(serverUri);
+  }
+
+  /// The web page's Create flow posts `{type: "pickVideo", source, projectId}`
+  /// when the user taps "Choose from Photos/Files"; `window.ErenNative` being
+  /// defined is also how the web page knows to offer that option at all.
+  Future<void> _onNativeMessage(String raw) async {
+    Map<String, dynamic> payload;
+    try {
+      payload = jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return;
+    }
+    if (payload['type'] != 'pickVideo') return;
+    final projectId = payload['projectId'] as String?;
+    if (projectId == null) return;
+    final result = await _uploads.pickAndUpload(
+      projectId: projectId,
+      fromFiles: payload['source'] == 'files',
+      cookieHeader: _cookieHeader,
+    );
+    await _controller.runJavaScript(
+      'window.onErenNativeUpload && window.onErenNativeUpload(${jsonEncode(result)})',
+    );
   }
 
   Future<NavigationDecision> _onNavigationRequest(NavigationRequest request) async {
