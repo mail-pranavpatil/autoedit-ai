@@ -1,4 +1,4 @@
-name: Build iOS
+name: iOS build
 
 # Compile-check the Flutter WebView shell on a macOS runner (the dev machine
 # is Windows). `build` runs on every push, unsigned debug - proves it
@@ -7,11 +7,9 @@ name: Build iOS
 # where to get them.
 
 on:
-  workflow_dispatch:
   push:
-    paths:
-      - "apps/mobile/**"
-      - ".github/workflows/ios.yml"
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
