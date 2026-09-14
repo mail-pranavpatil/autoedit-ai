@@ -9,9 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    app_env: str = "development"
-    frontend_url: str = "http://localhost:3000"
-    api_url: str = "http://localhost:8000"
+    app_env: str = "production"
+    frontend_url: str = "https://autoedit-web.onrender.com"
+    api_url: str = "https://autoedit-api.onrender.com"
     session_secret: str = "change-me-to-a-long-random-string"
     token_encryption_key: str = ""
 
@@ -21,9 +21,9 @@ class Settings(BaseSettings):
 
     google_client_id: str = ""
     google_client_secret: str = ""
-    google_redirect_uri: str = "http://localhost:8000/api/auth/callback"
+    google_redirect_uri: str = "https://autoedit-web.onrender.com/api/auth/callback"
     # Session cookie: set true once served over HTTPS behind a single origin.
-    cookie_secure: bool = False
+    cookie_secure: bool = True
     # Custom URL scheme the iOS shell registers; the mobile OAuth callback
     # redirects to "<scheme>://auth/callback?token=..." instead of setting a cookie.
     ios_redirect_scheme: str = "autoedit"

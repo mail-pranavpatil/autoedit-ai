@@ -4,7 +4,7 @@
 /// Override at build/run time: `flutter run --dart-define=AUTOEDIT_APP_URL=https://your-domain.example`
 const String serverUrl = String.fromEnvironment(
   'AUTOEDIT_APP_URL',
-  defaultValue: 'https://REPLACE-with-your-domain.example',
+  defaultValue: 'https://autoedit-web.onrender.com',
 );
 
 final Uri serverUri = Uri.parse(serverUrl);

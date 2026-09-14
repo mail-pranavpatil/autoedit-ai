@@ -12,7 +12,7 @@ COPY apps/web /app
 # passes a service's env vars into `docker build` for names declared as ARG
 # here; it auto-populates them from the same-named env vars on the service.
 ARG NEXT_PUBLIC_API_URL=""
-ARG API_PROXY_ORIGIN="http://localhost:8000"
+ARG API_PROXY_ORIGIN="https://autoedit-api.onrender.com"
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV API_PROXY_ORIGIN=$API_PROXY_ORIGIN
 

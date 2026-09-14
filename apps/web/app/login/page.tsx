@@ -5,16 +5,14 @@ import { Suspense, useEffect } from "react";
 import { API_URL } from "@/lib/api";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
-import { useAuth } from "@/components/providers";
 import { toast } from "@/components/common/Toast";
 
 function LoginForm() {
-  const { loginDemo } = useAuth();
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    if (searchParams.get("error") === "backend_offline") {
-      toast("Backend server (localhost:8000) is offline. Switched to Demo Mode to explore.", "err");
+    if (searchParams.get("error") === "oauth") {
+      toast("Google sign in failed or was cancelled.", "err");
     }
   }, [searchParams]);
 
@@ -27,13 +25,6 @@ function LoginForm() {
       </p>
       <Button className="mt-8 w-full" onClick={() => (window.location.href = `${API_URL}/api/auth/google`)}>
         Continue with Google
-      </Button>
-      <Button
-        variant="secondary"
-        className="mt-3 w-full"
-        onClick={loginDemo}
-      >
-        Explore as Demo Creator (Offline UI Mode)
       </Button>
     </Card>
   );

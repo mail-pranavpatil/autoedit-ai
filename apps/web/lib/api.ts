@@ -169,77 +169,16 @@ export type User = {
   driveConnected: boolean;
 };
 
-import { MOCK_PROJECTS, MOCK_VIDEOS } from "./mockData";
-
-export function isDemoMode() {
-  return typeof window !== "undefined" && localStorage.getItem("eren_demo_mode") === "true";
-}
-
-function handleMockApi<T>(path: string, init: RequestInit = {}): T | null {
-  if (!isDemoMode()) return null;
-  if (path === "/api/auth/me") {
-    return { id: "demo-1", email: "creator@eren.ai", name: "Eren Creator", driveConnected: true } as T;
-  }
-  if (path === "/api/auth/logout") {
-    localStorage.removeItem("eren_demo_mode");
-    return {} as T;
-  }
-  if (path === "/api/projects" && (!init.method || init.method === "GET")) {
-    return MOCK_PROJECTS as T;
-  }
-  if (path.startsWith("/api/projects/") && path.endsWith("/progress")) {
-    return { ...MOCK_PROJECTS[0], videos: MOCK_VIDEOS } as T;
-  }
-  if (path.startsWith("/api/projects/") && (!init.method || init.method === "GET")) {
-    return { ...MOCK_PROJECTS[0], videos: MOCK_VIDEOS } as T;
-  }
-  if (path.startsWith("/api/videos/")) {
-    return MOCK_VIDEOS[0] as T;
-  }
-  if (path === "/api/settings") {
-    return { googleConnected: true, youtubeConnected: false, youtubeAutoUpload: false } as T;
-  }
-  if (path === "/api/system") {
-    return { healthy: true, latencyMs: 8, version: "0.1.0" } as T;
-  }
-  if (path === "/api/assets") {
-    return [
-      { id: "asset-1", name: "Upbeat Lo-fi Groove", assetType: "music", url: "" },
-      { id: "asset-2", name: "Whoosh Accent", assetType: "sfx", url: "" },
-    ] as T;
-  }
-  if (path === "/api/style") {
-    return {
-      preset: "classic",
-      font: "sans",
-      size: 28,
-      position: "lower",
-    } as T;
-  }
-  return {} as T;
-}
-
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const mock = handleMockApi<T>(path, init);
-  if (mock !== null) return mock;
-
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  let res: Response;
-  try {
-    res = await fetch(`${API_URL}${path}`, {
-      ...init,
-      headers,
-      credentials: "include",
-    });
-  } catch (err) {
-    if (isDemoMode()) {
-      return (handleMockApi<T>(path, init) ?? ({} as T));
-    }
-    throw err;
-  }
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: "include",
+  });
   if (res.status === 401 && typeof window !== "undefined" && !path.includes("/auth/me")) {
     window.location.href = "/login";
     throw new Error("Unauthorized");
