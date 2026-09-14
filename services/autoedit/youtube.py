@@ -112,6 +112,37 @@ def _youtube_service(access_token: str):
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
 
+def fetch_user_youtube_channels(access_token: str) -> list[dict]:
+    """Query YouTube Data API v3 for channels owned by the authenticated Google account."""
+    try:
+        service = _youtube_service(access_token)
+        resp = service.channels().list(part="snippet,statistics", mine=True).execute()
+        channels = []
+        for item in resp.get("items", []):
+            snippet = item.get("snippet", {})
+            stats = item.get("statistics", {})
+            thumbnails = snippet.get("thumbnails", {})
+            thumb_url = (
+                thumbnails.get("high", {}).get("url")
+                or thumbnails.get("medium", {}).get("url")
+                or thumbnails.get("default", {}).get("url")
+            )
+            channels.append({
+                "channelId": item.get("id"),
+                "channelTitle": snippet.get("title") or "My YouTube Channel",
+                "customUrl": snippet.get("customUrl"),
+                "thumbnailUrl": thumb_url,
+                "subscriberCount": int(stats.get("subscriberCount") or 0),
+                "viewCount": int(stats.get("viewCount") or 0),
+                "videoCount": int(stats.get("videoCount") or 0),
+            })
+        return channels
+    except Exception as e:
+        logger.exception("Failed to fetch YouTube channels: %s", e)
+        return []
+
+
+
 def upload_scheduled_video(
     access_token: str,
     file_path: str,

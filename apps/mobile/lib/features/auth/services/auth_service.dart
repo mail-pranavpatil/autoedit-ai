@@ -1,14 +1,10 @@
 import 'package:flutter/foundation.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/session_manager.dart';
 
 class AuthService {
-  static final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email', 'profile'],
-  );
-
   /// Authenticate with email & password
   static Future<Map<String, dynamic>> login({
     required String email,
@@ -29,7 +25,7 @@ class AuthService {
     return user;
   }
 
-  /// Register new user with email & password
+  /// Register new user with email & password (generates email verification code)
   static Future<Map<String, dynamic>> register({
     required String email,
     required String password,
@@ -45,10 +41,36 @@ class AuthService {
       requiresAuth: false,
     );
 
+    return res as Map<String, dynamic>;
+  }
+
+  /// Verify email with 6-digit OTP code
+  static Future<Map<String, dynamic>> verifyEmail({
+    required String email,
+    required String code,
+  }) async {
+    final res = await ApiClient.post(
+      '/api/auth/verify-email',
+      body: {
+        'email': email,
+        'code': code,
+      },
+      requiresAuth: false,
+    );
+
     final token = res['token'] as String;
     final user = res['user'] as Map<String, dynamic>;
     await SessionManager.saveSession(token: token, user: user);
     return user;
+  }
+
+  /// Resend 6-digit email verification code
+  static Future<void> resendVerificationCode({required String email}) async {
+    await ApiClient.post(
+      '/api/auth/resend-code',
+      body: {'email': email},
+      requiresAuth: false,
+    );
   }
 
   /// Native Sign in with Apple (App Store required)
@@ -91,43 +113,36 @@ class AuthService {
     }
   }
 
-  /// Native Sign in with Google (Identity only, no YouTube scopes bundled here)
+  /// Crash-free Browser-based Google Sign-In (Apple ASWebAuthenticationSession)
   static Future<Map<String, dynamic>> signInWithGoogle() async {
     try {
-      final account = await _googleSignIn.signIn();
-      if (account == null) {
-        throw ApiException(400, 'Google sign in was cancelled');
+      final callback = await FlutterWebAuth2.authenticate(
+        url: '${ApiClient.baseUrl}/api/auth/google?platform=ios',
+        callbackUrlScheme: 'autoedit',
+      );
+
+      final uri = Uri.parse(callback);
+      final error = uri.queryParameters['error'];
+      if (error != null) {
+        throw ApiException(400, 'Google sign-in was not completed');
       }
 
-      await account.authentication;
+      final token = uri.queryParameters['token'];
+      if (token == null || token.isEmpty) {
+        throw ApiException(400, 'Authentication token missing from Google callback');
+      }
 
-      // Exchange credentials or register user with Google profile
-      final res = await ApiClient.post(
-        '/api/auth/register',
-        body: {
-          'email': account.email,
-          'password': 'google_oauth_${account.id}',
-          'name': account.displayName ?? account.email.split('@')[0],
-        },
-        requiresAuth: false,
-      ).catchError((err) async {
-        // If already registered, log in
-        return await ApiClient.post(
-          '/api/auth/login',
-          body: {
-            'email': account.email,
-            'password': 'google_oauth_${account.id}',
-          },
-          requiresAuth: false,
-        );
-      });
-
-      final token = res['token'] as String;
-      final user = res['user'] as Map<String, dynamic>;
+      // Save token and fetch user identity
+      await SessionManager.saveToken(token);
+      final user = await fetchMe();
       await SessionManager.saveSession(token: token, user: user);
       return user;
     } catch (e) {
-      if (kDebugMode) print('Google Sign-In Error: $e');
+      if (kDebugMode) print('Google Sign-In Exception: $e');
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('canceled') || errStr.contains('cancelled') || errStr.contains('user cancelled')) {
+        throw ApiException(400, 'Google sign in was cancelled');
+      }
       rethrow;
     }
   }
@@ -143,9 +158,7 @@ class AuthService {
     try {
       await ApiClient.post('/api/auth/logout', body: {});
     } catch (_) {}
-    try {
-      await _googleSignIn.signOut();
-    } catch (_) {}
     await SessionManager.clear();
   }
 }
+

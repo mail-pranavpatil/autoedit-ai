@@ -42,19 +42,16 @@ def read_session_token(token: str) -> str | None:
     return str(body.get("uid") or "") or None
 
 
-def create_oauth_state(platform: str = "web") -> str:
+def create_oauth_state(platform: str = "web", **kwargs) -> str:
     """Signed OAuth `state`. Carries the caller platform ("web" | "ios") with
     integrity so the callback can trust it, plus a nonce so states are unique.
-
-    ponytail: signed, not stored server-side, so this is state *integrity*, not
-    full CSRF binding. Fine for single-user/private. Add per-request nonce
-    storage + compare if this ever goes multi-tenant.
     """
     secret = get_settings().session_secret
-    encoded = base64.urlsafe_b64encode(
-        json.dumps({"p": platform or "web", "n": secrets.token_urlsafe(8)}).encode()
-    ).decode()
+    payload = {"p": platform or "web", "n": secrets.token_urlsafe(8)}
+    payload.update(kwargs)
+    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
     return f"{encoded}.{_sign(encoded, secret)}"
+
 
 
 def read_oauth_state(token: str) -> dict | None:

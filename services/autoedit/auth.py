@@ -22,14 +22,17 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+YOUTUBE_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 
 SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/drive.readonly",
+    YOUTUBE_READONLY_SCOPE,
     YOUTUBE_UPLOAD_SCOPE,
 ]
+
 
 
 def has_youtube_scope(scopes: str | None) -> bool:
@@ -91,6 +94,7 @@ def upsert_user_and_tokens(db: Session, token_payload: dict, userinfo: dict) -> 
     user.google_sub = sub
     user.name = userinfo.get("name")
     user.picture_url = userinfo.get("picture")
+    user.is_verified = True
     user.updated_at = datetime.utcnow()
     db.flush()
 

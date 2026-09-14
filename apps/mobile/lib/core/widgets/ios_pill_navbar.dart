@@ -20,13 +20,16 @@ class IOSPillNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
   final List<IOSPillNavItem> items;
+  final VoidCallback? onAddTap;
 
   const IOSPillNavBar({
     super.key,
     required this.currentIndex,
     required this.onTap,
     required this.items,
+    this.onAddTap,
   });
+
 
   @override
   Widget build(BuildContext context) {
@@ -83,77 +86,16 @@ class IOSPillNavBar extends StatelessWidget {
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: List.generate(items.length, (index) {
-                  final item = items[index];
-                  final isSelected = index == currentIndex;
-
-                  return Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        onTap(index);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                        decoration: BoxDecoration(
-                          // Active inner glowing pill
-                          gradient: isSelected
-                              ? LinearGradient(
-                                  colors: [
-                                    AppTheme.primary.withValues(alpha: 0.28),
-                                    AppTheme.accent.withValues(alpha: 0.16),
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                              : null,
-                          borderRadius: BorderRadius.circular(26),
-                          border: isSelected
-                              ? Border.all(
-                                  color: AppTheme.primaryLight.withValues(alpha: 0.45),
-                                  width: 1.0,
-                                )
-                              : Border.all(color: Colors.transparent),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            AnimatedScale(
-                              scale: isSelected ? 1.08 : 1.0,
-                              duration: const Duration(milliseconds: 180),
-                              child: Icon(
-                                isSelected ? item.activeIcon : item.icon,
-                                color: isSelected
-                                    ? AppTheme.primaryLight
-                                    : AppTheme.textMuted,
-                                size: 22,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              item.label,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight:
-                                    isSelected ? FontWeight.w700 : FontWeight.w500,
-                                color: isSelected
-                                    ? AppTheme.textPrimary
-                                    : AppTheme.textMuted,
-                                letterSpacing: -0.2,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }),
+                children: () {
+                  final List<Widget> widgets = [];
+                  for (int i = 0; i < items.length; i++) {
+                    if (onAddTap != null && i == items.length ~/ 2) {
+                      widgets.add(_buildAddButton());
+                    }
+                    widgets.add(_buildNavItem(i));
+                  }
+                  return widgets;
+                }(),
               ),
             ),
           ),
@@ -161,4 +103,111 @@ class IOSPillNavBar extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildAddButton() {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        onAddTap?.call();
+      },
+      child: Container(
+        width: 46,
+        height: 46,
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [AppTheme.primary, AppTheme.accent],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primary.withValues(alpha: 0.55),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.35),
+            width: 1.5,
+          ),
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.add_rounded,
+            color: Colors.white,
+            size: 26,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(int index) {
+    final item = items[index];
+    final isSelected = index == currentIndex;
+
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap(index);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          decoration: BoxDecoration(
+            gradient: isSelected
+                ? LinearGradient(
+                    colors: [
+                      AppTheme.primary.withValues(alpha: 0.28),
+                      AppTheme.accent.withValues(alpha: 0.16),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(26),
+            border: isSelected
+                ? Border.all(
+                    color: AppTheme.primaryLight.withValues(alpha: 0.45),
+                    width: 1.0,
+                  )
+                : Border.all(color: Colors.transparent),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedScale(
+                scale: isSelected ? 1.08 : 1.0,
+                duration: const Duration(milliseconds: 180),
+                child: Icon(
+                  isSelected ? item.activeIcon : item.icon,
+                  color: isSelected ? AppTheme.primaryLight : AppTheme.textMuted,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                item.label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? AppTheme.textPrimary : AppTheme.textMuted,
+                  letterSpacing: -0.2,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
+

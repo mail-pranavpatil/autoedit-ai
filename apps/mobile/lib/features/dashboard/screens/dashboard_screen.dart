@@ -47,6 +47,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ),
   ];
 
+  List<dynamic> _projects = [];
+
   @override
   void initState() {
     super.initState();
@@ -56,23 +58,71 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadDashboardData() async {
     setState(() => _isLoading = true);
     try {
-      final user = await SessionManager.getUser();
+      final user = await AuthService.fetchMe().catchError((_) async => await SessionManager.getUser() ?? {});
       final channelsRes = await ApiClient.get('/api/channels').catchError((_) => []);
+      final projectsRes = await ApiClient.get('/api/projects').catchError((_) => []);
 
       setState(() {
         _user = user;
         _channels = channelsRes is List ? channelsRes : [];
+        _projects = projectsRes is List ? projectsRes : [];
         _isLoading = false;
       });
+
     } catch (_) {
       setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _pickVideoFromCameraRoll() async {
+  void _showCreateActionSheet() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('Add Video to Eren AI'),
+        message: const Text('Choose a source to import talking-head footage for AI automated editing'),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _pickVideo(ImageSource.gallery);
+            },
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(CupertinoIcons.photo_on_rectangle, size: 20),
+                SizedBox(width: 8),
+                Text('Choose from Photos / Camera Roll'),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _pickVideo(ImageSource.camera);
+            },
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(CupertinoIcons.camera, size: 20),
+                SizedBox(width: 8),
+                Text('Record Video with Camera'),
+              ],
+            ),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickVideo(ImageSource source) async {
     try {
       final XFile? video = await _picker.pickVideo(
-        source: ImageSource.gallery,
+        source: source,
         maxDuration: const Duration(minutes: 10),
       );
       if (video != null) {
@@ -83,12 +133,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             backgroundColor: AppTheme.success,
           ),
         );
+        // Refresh project list after import
+        _loadDashboardData();
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not access photos: $e'),
+          content: Text('Could not access video: $e'),
           backgroundColor: AppTheme.danger,
         ),
       );
@@ -132,8 +184,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (OnboardingState.instance.selectedChannels.isNotEmpty) {
       return OnboardingState.instance.selectedChannels.first.title;
     }
-    return 'Tech Channel';
+    return 'My YouTube Channel';
   }
+
+  Map<String, dynamic> get _activeGoals {
+    if (_channels.isNotEmpty && _channels.first['goals'] is Map) {
+      return _channels.first['goals'] as Map<String, dynamic>;
+    }
+    return {};
+  }
+
+  int get _targetViews => (_activeGoals['targetViews'] as num?)?.toInt() ?? 50000;
+  int get _targetSubs => (_activeGoals['targetSubs'] as num?)?.toInt() ?? 10000;
+  String get _targetDate => (_activeGoals['targetDate'] as String?) ?? 'December 31, 2026';
+
+  String _formatNumber(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toString();
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -162,9 +232,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         currentIndex: _selectedBottomTab,
         onTap: (idx) => setState(() => _selectedBottomTab = idx),
         items: _navItems,
+        onAddTap: _showCreateActionSheet,
       ),
     );
   }
+
 
   // Apple Frosted Glass Top App Bar
   Widget _buildHeaderGlassBar() {
@@ -327,17 +399,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 16),
 
                 _buildGoalProgress(
-                  label: 'Channel Views',
-                  current: 31400,
-                  target: 50000,
+                  label: 'Channel Views (Target: ${_formatNumber(_targetViews)})',
+                  current: (_targetViews * 0.62).toInt(),
+                  target: _targetViews,
                   color: AppTheme.primary,
                 ),
                 const SizedBox(height: 14),
 
                 _buildGoalProgress(
-                  label: 'Channel Subscribers',
-                  current: 7420,
-                  target: 10000,
+                  label: 'Channel Subscribers (Target: ${_formatNumber(_targetSubs)})',
+                  current: (_targetSubs * 0.74).toInt(),
+                  target: _targetSubs,
                   color: AppTheme.accent,
                 ),
               ],
@@ -347,7 +419,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           // Primary Quick Action: Camera Roll Import
           ElevatedButton.icon(
-            onPressed: _pickVideoFromCameraRoll,
+            onPressed: () => _pickVideo(ImageSource.gallery),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.primary,
               minimumSize: const Size.fromHeight(54),
@@ -392,30 +464,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Video Pipeline Items
-          _buildProjectItem(
-            title: 'How AI Changes Video Creation in 2026',
-            channel: _activeChannelTitle,
-            duration: '0:58 min',
-            status: 'SCHEDULED',
-            statusColor: AppTheme.success,
-          ),
-          const SizedBox(height: 10),
-          _buildProjectItem(
-            title: 'Top 5 Creator Growth Strategies',
-            channel: _activeChannelTitle,
-            duration: '1:14 min',
-            status: 'RENDERING (82%)',
-            statusColor: AppTheme.primaryLight,
-          ),
-          const SizedBox(height: 10),
-          _buildProjectItem(
-            title: 'Behind the Scenes Workflow',
-            channel: _activeChannelTitle,
-            duration: '0:42 min',
-            status: 'QUEUED',
-            statusColor: AppTheme.warning,
-          ),
+          // Dynamic Video Pipeline Items
+          if (_projects.isNotEmpty) ...[
+            ..._projects.take(3).map((p) {
+              final ready = (p['readyVideos'] as int?) ?? 0;
+              final processing = (p['processingVideos'] as int?) ?? 0;
+              final total = (p['totalVideos'] as int?) ?? 0;
+
+              String statusStr = 'QUEUED';
+              Color statusClr = AppTheme.warning;
+              if (ready > 0) {
+                statusStr = 'READY ($ready)';
+                statusClr = AppTheme.success;
+              } else if (processing > 0) {
+                statusStr = 'PROCESSING';
+                statusClr = AppTheme.primaryLight;
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _buildProjectItem(
+                  title: p['name'] ?? 'Untitled Video Project',
+                  channel: _activeChannelTitle,
+                  duration: total > 0 ? '$total clips' : 'Auto Short',
+                  status: statusStr,
+                  statusColor: statusClr,
+                ),
+              );
+            }),
+          ] else ...[
+            GlassContainer(
+              padding: const EdgeInsets.all(20),
+              borderRadius: 18,
+              child: Column(
+                children: [
+                  const Icon(CupertinoIcons.film, color: AppTheme.primaryLight, size: 34),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Queue is Empty',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Tap the + button below or import a talking-head video clip to start creating AI videos.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
         ],
       ),
     );
@@ -457,37 +556,66 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 16),
 
-          _buildProjectItem(
-            title: 'How AI Changes Video Creation in 2026',
-            channel: _activeChannelTitle,
-            duration: '0:58 min',
-            status: 'SCHEDULED',
-            statusColor: AppTheme.success,
-          ),
-          const SizedBox(height: 10),
-          _buildProjectItem(
-            title: 'Top 5 Creator Growth Strategies',
-            channel: _activeChannelTitle,
-            duration: '1:14 min',
-            status: 'RENDERING (82%)',
-            statusColor: AppTheme.primaryLight,
-          ),
-          const SizedBox(height: 10),
-          _buildProjectItem(
-            title: 'Behind the Scenes Workflow',
-            channel: _activeChannelTitle,
-            duration: '0:42 min',
-            status: 'QUEUED',
-            statusColor: AppTheme.warning,
-          ),
-          const SizedBox(height: 10),
-          _buildProjectItem(
-            title: '10x Content Velocity Breakdown',
-            channel: _activeChannelTitle,
-            duration: '0:51 min',
-            status: 'PUBLISHED',
-            statusColor: AppTheme.accent,
-          ),
+          // Dynamic Video Project Items
+          if (_projects.isNotEmpty) ...[
+            ..._projects.map((p) {
+              final ready = (p['readyVideos'] as int?) ?? 0;
+              final processing = (p['processingVideos'] as int?) ?? 0;
+              final total = (p['totalVideos'] as int?) ?? 0;
+
+              String statusStr = 'QUEUED';
+              Color statusClr = AppTheme.warning;
+              if (ready > 0) {
+                statusStr = 'READY';
+                statusClr = AppTheme.success;
+              } else if (processing > 0) {
+                statusStr = 'PROCESSING';
+                statusClr = AppTheme.primaryLight;
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildProjectItem(
+                  title: p['name'] ?? 'Untitled Video Project',
+                  channel: _activeChannelTitle,
+                  duration: '$total video${total == 1 ? "" : "s"}',
+                  status: statusStr,
+                  statusColor: statusClr,
+                ),
+              );
+            }),
+          ] else ...[
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40),
+                child: Column(
+                  children: [
+                    const Icon(CupertinoIcons.film_fill, size: 54, color: AppTheme.cardBorder),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'No Video Projects Yet',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Create your first AI video project by importing footage.',
+                      style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: () => _pickVideo(ImageSource.gallery),
+                      icon: const Icon(CupertinoIcons.add, size: 18),
+                      label: const Text('Import First Video'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -553,31 +681,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 18),
                 _buildGoalProgress(
-                  label: 'Quarterly Views (Goal: 50,000)',
-                  current: 31400,
-                  target: 50000,
+                  label: 'Quarterly Views (Target: ${_formatNumber(_targetViews)})',
+                  current: (_targetViews * 0.62).toInt(),
+                  target: _targetViews,
                   color: AppTheme.primary,
                 ),
                 const SizedBox(height: 16),
                 _buildGoalProgress(
-                  label: 'Subscribers (Goal: 10,000)',
-                  current: 7420,
-                  target: 10000,
+                  label: 'Subscribers (Target: ${_formatNumber(_targetSubs)})',
+                  current: (_targetSubs * 0.74).toInt(),
+                  target: _targetSubs,
                   color: AppTheme.accent,
                 ),
                 const SizedBox(height: 18),
                 const Divider(color: AppTheme.glassBorder),
                 const SizedBox(height: 12),
-                const Row(
+                Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
+                    const Text(
                       'Deadline Target:',
                       style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
                     ),
                     Text(
-                      'December 31, 2026 (78 days remaining)',
-                      style: TextStyle(
+                      _targetDate,
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.primaryLight,
@@ -592,6 +720,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+
 
   // TAB 3: SETTINGS
   Widget _buildSettingsTab() {

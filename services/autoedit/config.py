@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     # full-res buffers per decoder, which OOM-kills memory-capped containers
     # (SIGKILL 9). Cap decoder / filtergraph / encoder threads to keep peak RAM
     # bounded. Raise this on hosts with plenty of memory to speed rendering up.
+    # Email verification (SMTP or Resend)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "Eren AI <noreply@autoedit.ai>"
+    smtp_use_tls: bool = True
+    resend_api_key: str = ""
+
     render_ffmpeg_threads: int = 1
 
 

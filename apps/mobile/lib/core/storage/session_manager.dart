@@ -26,6 +26,12 @@ class SessionManager {
     await _storage.write(key: _keyOnboarding, value: onboarding.toString());
   }
 
+  /// Saves just the token (e.g. before fetching profile)
+  static Future<void> saveToken(String token) async {
+    await _storage.write(key: _keyToken, value: token);
+  }
+
+
   /// Retrieves the active auth token, if any
   static Future<String?> getToken() async {
     return await _storage.read(key: _keyToken);

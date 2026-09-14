@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../onboarding/screens/platform_select_screen.dart';
 import '../services/auth_service.dart';
+import 'email_verification_screen.dart';
+
+
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -31,13 +33,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
-  void _handleSuccess(Map<String, dynamic> user) {
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const PlatformSelectScreen()),
-      (route) => false,
-    );
-  }
 
   Future<void> _signUpWithEmail() async {
     if (!_formKey.currentState!.validate()) return;
@@ -46,16 +41,27 @@ class _SignUpScreenState extends State<SignUpScreen> {
       _errorMessage = null;
     });
 
+    final email = _emailController.text.trim();
+    final name = _nameController.text.trim();
+
     try {
-      final user = await AuthService.register(
-        email: _emailController.text.trim(),
+      await AuthService.register(
+        email: email,
         password: _passwordController.text,
-        name: _nameController.text.trim(),
+        name: name,
       );
-      _handleSuccess(user);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EmailVerificationScreen(
+            email: email,
+            name: name.isNotEmpty ? name : null,
+          ),
+        ),
+      );
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _errorMessage = e.toString().replaceAll('Exception: ', '').replaceAll('ApiException: ', '');
       });
     } finally {
       if (mounted) {
@@ -63,6 +69,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

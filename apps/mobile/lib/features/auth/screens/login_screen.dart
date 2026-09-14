@@ -5,6 +5,8 @@ import '../../onboarding/screens/platform_select_screen.dart';
 import '../../dashboard/screens/dashboard_screen.dart';
 import '../services/auth_service.dart';
 import 'signup_screen.dart';
+import 'email_verification_screen.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -57,8 +59,18 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       _handleSuccess(user);
     } catch (e) {
+      final errStr = e.toString().replaceAll('ApiException: ', '').replaceAll('Exception: ', '');
+      if (errStr.toLowerCase().contains('verify your email')) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => EmailVerificationScreen(email: _emailController.text.trim()),
+          ),
+        );
+        return;
+      }
       setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _errorMessage = errStr;
       });
     } finally {
       if (mounted) {
@@ -66,6 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     }
   }
+
 
   Future<void> _loginWithGoogle() async {
     setState(() {
