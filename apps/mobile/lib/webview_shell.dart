@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -118,14 +118,27 @@ class _WebViewShellState extends State<WebViewShell> {
     return cookies.map((c) => '${c.name}=${c.value}').join('; ');
   }
 
+  // Currently dead code - WebViewShell has no caller anywhere in the app -
+  // but kept correct rather than left stale, in case it's revived. Login is
+  // Supabase Auth now (see features/auth/services/auth_service.dart); this
+  // mirrors the same signInWithOAuth + onAuthStateChange pattern used there,
+  // then hands the resulting access token to the WebView as a cookie so
+  // apps/web (which mirrors its own session into the same cookie name - see
+  // apps/web/components/providers.tsx) picks it up on reload.
   Future<void> _startAuthSession() async {
+    final auth = Supabase.instance.client.auth;
+    final completer = Completer<void>();
+    late final StreamSubscription<AuthState> sub;
+    sub = auth.onAuthStateChange.listen((state) {
+      if (state.event == AuthChangeEvent.signedIn && !completer.isCompleted) {
+        completer.complete();
+      }
+    });
     try {
-      final callback = await FlutterWebAuth2.authenticate(
-        url: '$serverUrl/api/auth/google?platform=ios',
-        callbackUrlScheme: authScheme,
-      );
-      final token = Uri.parse(callback).queryParameters['token'];
-      if (token == null || token.isEmpty) return;
+      await auth.signInWithOAuth(OAuthProvider.google, redirectTo: '$authScheme://login-callback');
+      await completer.future.timeout(const Duration(minutes: 2));
+      final token = auth.currentSession?.accessToken;
+      if (token == null) return;
       // ponytail: webview_flutter's WebViewCookie has no secure/httpOnly/expiry
       // knobs (unlike the native HTTPCookie the old Capacitor plugin used) -
       // fine for a same-origin https session cookie, revisit if that changes.
@@ -136,6 +149,8 @@ class _WebViewShellState extends State<WebViewShell> {
     } catch (_) {
       // User cancelled or auth failed - the web app's own login button lets
       // them retry, so there is nothing to recover here.
+    } finally {
+      await sub.cancel();
     }
   }
 

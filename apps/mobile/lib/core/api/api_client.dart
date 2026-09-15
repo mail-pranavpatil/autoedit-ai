@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../app_config.dart';
-import '../storage/session_manager.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -22,7 +22,7 @@ class ApiClient {
       'Accept': 'application/json',
     };
     if (requiresAuth) {
-      final token = await SessionManager.getToken();
+      final token = Supabase.instance.client.auth.currentSession?.accessToken;
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       }

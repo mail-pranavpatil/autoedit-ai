@@ -1,47 +1,48 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../app_config.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/session_manager.dart';
 
 class AuthService {
+  static SupabaseClient get _client => Supabase.instance.client;
+
   /// Authenticate with email & password
   static Future<Map<String, dynamic>> login({
     required String email,
     required String password,
   }) async {
-    final res = await ApiClient.post(
-      '/api/auth/login',
-      body: {
-        'email': email,
-        'password': password,
-      },
-      requiresAuth: false,
-    );
-
-    final token = res['token'] as String;
-    final user = res['user'] as Map<String, dynamic>;
-    await SessionManager.saveSession(token: token, user: user);
-    return user;
+    try {
+      await _client.auth.signInWithPassword(email: email, password: password);
+    } on AuthException catch (e) {
+      if (e.message.toLowerCase().contains('confirm')) {
+        // Matches the substring login_screen.dart greps for to route to
+        // EmailVerificationScreen instead of showing a plain error.
+        throw ApiException(403, 'Please verify your email address to log in');
+      }
+      throw ApiException(401, e.message);
+    }
+    return _syncProfile();
   }
 
-  /// Register new user with email & password (generates email verification code)
+  /// Register new user with email & password (Supabase emails a 6-digit OTP)
   static Future<Map<String, dynamic>> register({
     required String email,
     required String password,
     String? name,
   }) async {
-    final res = await ApiClient.post(
-      '/api/auth/register',
-      body: {
-        'email': email,
-        'password': password,
-        'name': name,
-      },
-      requiresAuth: false,
-    );
-
-    return res as Map<String, dynamic>;
+    try {
+      await _client.auth.signUp(
+        email: email,
+        password: password,
+        data: (name != null && name.isNotEmpty) ? {'name': name} : null,
+      );
+    } on AuthException catch (e) {
+      throw ApiException(400, e.message);
+    }
+    return {'ok': true, 'requiresVerification': true, 'email': email};
   }
 
   /// Verify email with 6-digit OTP code
@@ -49,28 +50,21 @@ class AuthService {
     required String email,
     required String code,
   }) async {
-    final res = await ApiClient.post(
-      '/api/auth/verify-email',
-      body: {
-        'email': email,
-        'code': code,
-      },
-      requiresAuth: false,
-    );
-
-    final token = res['token'] as String;
-    final user = res['user'] as Map<String, dynamic>;
-    await SessionManager.saveSession(token: token, user: user);
-    return user;
+    try {
+      await _client.auth.verifyOTP(email: email, token: code, type: OtpType.signup);
+    } on AuthException catch (e) {
+      throw ApiException(400, e.message);
+    }
+    return _syncProfile();
   }
 
   /// Resend 6-digit email verification code
   static Future<void> resendVerificationCode({required String email}) async {
-    await ApiClient.post(
-      '/api/auth/resend-code',
-      body: {'email': email},
-      requiresAuth: false,
-    );
+    try {
+      await _client.auth.resend(type: OtpType.signup, email: email);
+    } on AuthException catch (e) {
+      throw ApiException(400, e.message);
+    }
   }
 
   /// Native Sign in with Apple (App Store required)
@@ -83,27 +77,28 @@ class AuthService {
         ],
       );
 
+      final idToken = credential.identityToken;
+      if (idToken == null) {
+        throw ApiException(400, 'Apple Sign-In did not return an identity token');
+      }
+
+      // Supabase verifies the token's signature against Apple's keys itself.
+      await _client.auth.signInWithIdToken(provider: OAuthProvider.apple, idToken: idToken);
+
       final displayName = [
         credential.givenName,
         credential.familyName,
       ].where((e) => e != null && e.isNotEmpty).join(' ');
+      if (displayName.isNotEmpty) {
+        try {
+          await _client.auth.updateUser(UserAttributes(data: {'name': displayName}));
+        } catch (_) {
+          // Apple only returns the name on first sign-in; losing it on a
+          // later retry shouldn't block sign-in.
+        }
+      }
 
-      final res = await ApiClient.post(
-        '/api/auth/apple',
-        body: {
-          'identity_token': credential.identityToken,
-          'authorization_code': credential.authorizationCode,
-          'user_id': credential.userIdentifier,
-          'email': credential.email,
-          'name': displayName.isNotEmpty ? displayName : null,
-        },
-        requiresAuth: false,
-      );
-
-      final token = res['token'] as String;
-      final user = res['user'] as Map<String, dynamic>;
-      await SessionManager.saveSession(token: token, user: user);
-      return user;
+      return await _syncProfile();
     } catch (e) {
       if (e is SignInWithAppleAuthorizationException) {
         if (e.code == AuthorizationErrorCode.canceled) {
@@ -127,30 +122,26 @@ class AuthService {
     }
   }
 
-  /// Crash-free Browser-based Google Sign-In (Apple ASWebAuthenticationSession)
+  /// Google Sign-In via Supabase's Google provider (external browser + deep
+  /// link back into the app - autoedit:// is already a registered URL scheme).
   static Future<Map<String, dynamic>> signInWithGoogle() async {
+    final completer = Completer<void>();
+    late final StreamSubscription<AuthState> sub;
+    sub = _client.auth.onAuthStateChange.listen((state) {
+      if (state.event == AuthChangeEvent.signedIn && !completer.isCompleted) {
+        completer.complete();
+      }
+    });
+
     try {
-      final callback = await FlutterWebAuth2.authenticate(
-        url: '${ApiClient.baseUrl}/api/auth/google?platform=ios',
-        callbackUrlScheme: 'autoedit',
+      await _client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: '$authScheme://login-callback',
       );
-
-      final uri = Uri.parse(callback);
-      final error = uri.queryParameters['error'];
-      if (error != null) {
-        throw ApiException(400, 'Google sign-in was not completed');
-      }
-
-      final token = uri.queryParameters['token'];
-      if (token == null || token.isEmpty) {
-        throw ApiException(400, 'Authentication token missing from Google callback');
-      }
-
-      // Save token and fetch user identity
-      await SessionManager.saveToken(token);
-      final user = await fetchMe();
-      await SessionManager.saveSession(token: token, user: user);
-      return user;
+      await completer.future.timeout(const Duration(minutes: 2));
+      return await _syncProfile();
+    } on TimeoutException {
+      throw ApiException(400, 'Google sign in was cancelled');
     } catch (e) {
       if (kDebugMode) print('Google Sign-In Exception: $e');
       final errStr = e.toString().toLowerCase();
@@ -158,6 +149,8 @@ class AuthService {
         throw ApiException(400, 'Google sign in was cancelled');
       }
       rethrow;
+    } finally {
+      await sub.cancel();
     }
   }
 
@@ -167,12 +160,20 @@ class AuthService {
     return res as Map<String, dynamic>;
   }
 
-  /// Logout and clear storage
+  /// Fetches the profile after a successful Supabase sign-in and caches it
+  /// locally (the `public.users` row always exists by then - the DB trigger
+  /// creates it the moment Supabase creates the auth.users row).
+  static Future<Map<String, dynamic>> _syncProfile() async {
+    final user = await fetchMe();
+    await SessionManager.cacheUser(user);
+    return user;
+  }
+
+  /// Logout and clear local cache
   static Future<void> logout() async {
     try {
-      await ApiClient.post('/api/auth/logout', body: {});
+      await _client.auth.signOut();
     } catch (_) {}
     await SessionManager.clear();
   }
 }
-
