@@ -73,8 +73,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colors.background,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(CupertinoIcons.back),
@@ -90,23 +91,23 @@ class _SignUpScreenState extends State<SignUpScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
+                  Text(
                     'Create Account',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
+                      color: colors.textPrimary,
                       letterSpacing: -0.5,
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Start automating your content creation in minutes',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
-                      color: AppTheme.textSecondary,
+                      color: colors.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 28),
@@ -115,18 +116,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppTheme.danger.withOpacity(0.12),
+                        color: colors.danger.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppTheme.danger.withOpacity(0.3)),
+                        border: Border.all(color: colors.danger.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.error_outline, color: AppTheme.danger, size: 20),
+                          Icon(Icons.error_outline, color: colors.danger, size: 20),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               _errorMessage!,
-                              style: const TextStyle(color: AppTheme.danger, fontSize: 13),
+                              style: TextStyle(color: colors.danger, fontSize: 13),
                             ),
                           ),
                         ],
@@ -139,11 +140,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   TextFormField(
                     controller: _nameController,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: AppTheme.textPrimary),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: colors.textPrimary),
+                    decoration: InputDecoration(
                       labelText: 'Full Name',
-                      labelStyle: TextStyle(color: AppTheme.textSecondary),
-                      prefixIcon: Icon(CupertinoIcons.person, color: AppTheme.textSecondary),
+                      labelStyle: TextStyle(color: colors.textSecondary),
+                      prefixIcon: Icon(CupertinoIcons.person, color: colors.textSecondary),
                       hintText: 'John Doe',
                     ),
                     validator: (value) {
@@ -160,11 +161,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: AppTheme.textPrimary),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: colors.textPrimary),
+                    decoration: InputDecoration(
                       labelText: 'Email Address',
-                      labelStyle: TextStyle(color: AppTheme.textSecondary),
-                      prefixIcon: Icon(CupertinoIcons.mail, color: AppTheme.textSecondary),
+                      labelStyle: TextStyle(color: colors.textSecondary),
+                      prefixIcon: Icon(CupertinoIcons.mail, color: colors.textSecondary),
                       hintText: 'creator@example.com',
                     ),
                     validator: (value) {
@@ -184,16 +185,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: AppTheme.textPrimary),
+                    style: TextStyle(color: colors.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Password',
-                      labelStyle: const TextStyle(color: AppTheme.textSecondary),
-                      prefixIcon: const Icon(CupertinoIcons.lock, color: AppTheme.textSecondary),
+                      labelStyle: TextStyle(color: colors.textSecondary),
+                      prefixIcon: Icon(CupertinoIcons.lock, color: colors.textSecondary),
                       hintText: 'At least 6 characters',
                       suffixIcon: IconButton(
                         icon: Icon(
                           _obscurePassword ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
-                          color: AppTheme.textSecondary,
+                          color: colors.textSecondary,
                         ),
                         onPressed: () {
                           setState(() => _obscurePassword = !_obscurePassword);
@@ -218,11 +219,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _signUpWithEmail(),
-                    style: const TextStyle(color: AppTheme.textPrimary),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: colors.textPrimary),
+                    decoration: InputDecoration(
                       labelText: 'Confirm Password',
-                      labelStyle: TextStyle(color: AppTheme.textSecondary),
-                      prefixIcon: Icon(CupertinoIcons.lock_shield, color: AppTheme.textSecondary),
+                      labelStyle: TextStyle(color: colors.textSecondary),
+                      prefixIcon: Icon(CupertinoIcons.lock_shield, color: colors.textSecondary),
                       hintText: 'Re-enter your password',
                     ),
                     validator: (value) {
@@ -254,16 +255,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text(
+                      Text(
                         'Already have an account? ',
-                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+                        style: TextStyle(color: colors.textSecondary, fontSize: 14),
                       ),
                       GestureDetector(
                         onTap: () => Navigator.of(context).pop(),
-                        child: const Text(
+                        child: Text(
                           'Log in',
                           style: TextStyle(
-                            color: AppTheme.primaryLight,
+                            color: colors.accent,
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
                             decoration: TextDecoration.underline,

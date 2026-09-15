@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from autoedit.auth import get_current_user
 from autoedit.db import get_db
@@ -102,6 +102,27 @@ async def upload_video(
     return {"id": str(video.id), "filename": video.filename, "status": video.status}
 
 
+@router.get("/videos")
+def list_all_videos(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Flat, most-recent-first list of every video across all of the user's
+    projects — one query, used by the mobile Videos grid instead of N+1
+    per-project fetches."""
+    rows = (
+        db.query(Video)
+        .join(Video.project)
+        .options(contains_eager(Video.project), joinedload(Video.youtube_upload))
+        .filter(Project.user_id == user.id)
+        .order_by(Video.created_at.desc())
+        .all()
+    )
+    return [
+        {**serialize_video(v), "projectId": str(v.project_id), "projectName": v.project.name}
+        for v in rows
+    ]
+
+
+# NOTE: must be registered before GET /{project_id} — otherwise FastAPI tries
+# to parse the literal "videos" segment as a project_id UUID and 422s.
 @router.get("/{project_id}")
 def get_project(project_id: uuid.UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = (

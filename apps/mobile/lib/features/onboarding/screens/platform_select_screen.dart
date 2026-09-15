@@ -58,10 +58,11 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final hasActiveSelection = _platforms.any((p) => p.isSelected && p.isAvailable);
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colors.background,
       appBar: AppBar(
         title: const Text('Distribution Channels'),
         elevation: 0,
@@ -80,7 +81,7 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                       height: 4,
                       margin: EdgeInsets.only(right: index < 4 ? 6 : 0),
                       decoration: BoxDecoration(
-                        color: index == 0 ? AppTheme.primary : AppTheme.cardBorder,
+                        color: index == 0 ? colors.accent : colors.cardBorder,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -89,21 +90,21 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
               ),
               const SizedBox(height: 24),
 
-              const Text(
+              Text(
                 'Where do you publish?',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                  color: colors.textPrimary,
                   letterSpacing: -0.5,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Select the platforms you want your AI videos uploaded to. YouTube is available now; others are unlocking soon.',
                 style: TextStyle(
                   fontSize: 14,
-                  color: AppTheme.textSecondary,
+                  color: colors.textSecondary,
                   height: 1.4,
                 ),
               ),
@@ -122,13 +123,13 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                       duration: const Duration(milliseconds: 200),
                       decoration: BoxDecoration(
                         color: platform.isSelected && isAvailable
-                            ? AppTheme.primary.withOpacity(0.12)
-                            : AppTheme.card,
+                            ? colors.accent.withValues(alpha: 0.12)
+                            : colors.card,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: platform.isSelected && isAvailable
-                              ? AppTheme.primary
-                              : AppTheme.cardBorder,
+                              ? colors.accent
+                              : colors.cardBorder,
                           width: platform.isSelected && isAvailable ? 1.5 : 1,
                         ),
                       ),
@@ -145,7 +146,7 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                                   SnackBar(
                                     content: Text('${platform.name} integration is coming soon!'),
                                     duration: const Duration(seconds: 2),
-                                    backgroundColor: AppTheme.card,
+                                    backgroundColor: colors.card,
                                   ),
                                 );
                               },
@@ -160,8 +161,8 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                                 alignment: Alignment.center,
                                 decoration: BoxDecoration(
                                   color: isAvailable
-                                      ? AppTheme.youtubeRed.withOpacity(0.15)
-                                      : Colors.white.withOpacity(0.06),
+                                      ? AppTheme.youtubeRed.withValues(alpha: 0.15)
+                                      : colors.cardBorder.withValues(alpha: 0.4),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: isAvailable
@@ -176,8 +177,8 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
                                           color: isAvailable
-                                              ? AppTheme.textPrimary
-                                              : AppTheme.textMuted,
+                                              ? colors.textPrimary
+                                              : colors.textMuted,
                                         ),
                                       ),
                               ),
@@ -196,8 +197,8 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                                             fontSize: 16,
                                             fontWeight: FontWeight.w600,
                                             color: isAvailable
-                                                ? AppTheme.textPrimary
-                                                : AppTheme.textSecondary,
+                                                ? colors.textPrimary
+                                                : colors.textSecondary,
                                           ),
                                         ),
                                         if (!isAvailable) ...[
@@ -206,15 +207,15 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                                             padding: const EdgeInsets.symmetric(
                                                 horizontal: 8, vertical: 3),
                                             decoration: BoxDecoration(
-                                              color: Colors.white.withOpacity(0.08),
+                                              color: colors.cardBorder.withValues(alpha: 0.4),
                                               borderRadius: BorderRadius.circular(6),
                                             ),
-                                            child: const Text(
+                                            child: Text(
                                               'Coming Soon',
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 fontWeight: FontWeight.bold,
-                                                color: AppTheme.textMuted,
+                                                color: colors.textMuted,
                                                 letterSpacing: 0.3,
                                               ),
                                             ),
@@ -230,8 +231,8 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: isAvailable
-                                            ? AppTheme.textSecondary
-                                            : AppTheme.textMuted,
+                                            ? colors.textSecondary
+                                            : colors.textMuted,
                                       ),
                                     ),
                                   ],
@@ -241,7 +242,7 @@ class _PlatformSelectScreenState extends State<PlatformSelectScreen> {
                               // Toggle Switch
                               CupertinoSwitch(
                                 value: platform.isSelected,
-                                activeTrackColor: AppTheme.primary,
+                                activeTrackColor: colors.accent,
                                 onChanged: isAvailable
                                     ? (value) {
                                         setState(() {

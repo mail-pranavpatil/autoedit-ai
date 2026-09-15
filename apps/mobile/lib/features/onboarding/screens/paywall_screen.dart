@@ -18,6 +18,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
   Future<void> _completeOnboardingAndEnterDashboard({bool subscribed = false}) async {
     setState(() => _isProcessing = true);
+    final colors = context.colors;
 
     try {
       // Call backend to mark onboarding completed
@@ -39,9 +40,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
     if (subscribed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pro Plan Activated! Welcome to Unlimited Creator Access.'),
-          backgroundColor: AppTheme.success,
+        SnackBar(
+          content: const Text('Pro Plan Activated! Welcome to Unlimited Creator Access.'),
+          backgroundColor: colors.success,
         ),
       );
     }
@@ -54,8 +55,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colors.background,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
@@ -67,13 +69,11 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppTheme.primary, AppTheme.accent],
-                    ),
+                    color: colors.accent,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: AppTheme.primary.withOpacity(0.3),
+                        color: colors.accent.withValues(alpha: 0.3),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -99,23 +99,23 @@ class _PaywallScreenState extends State<PaywallScreen> {
               ),
               const SizedBox(height: 18),
 
-              const Text(
+              Text(
                 'Scale Your Channel With Zero Editing Friction',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                  color: colors.textPrimary,
                   letterSpacing: -0.6,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'High-converting edits, viral caption styles, and automatic distribution.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
-                  color: AppTheme.textSecondary,
+                  color: colors.textSecondary,
                   height: 1.4,
                 ),
               ),
@@ -125,19 +125,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
               Container(
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppTheme.card,
-                      AppTheme.surface,
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: colors.card,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppTheme.primary, width: 2),
+                  border: Border.all(color: colors.accent, width: 2),
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.primary.withOpacity(0.18),
+                      color: colors.accent.withValues(alpha: 0.18),
                       blurRadius: 24,
                       offset: const Offset(0, 10),
                     ),
@@ -145,12 +138,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ),
                 child: Column(
                   children: [
-                    const Text(
+                    Text(
                       'All-Inclusive Creator Pass',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: AppTheme.primaryLight,
+                        color: colors.accent,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -161,29 +154,29 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
-                        const Text(
+                        Text(
                           '\$',
                           style: TextStyle(
                             fontSize: 26,
                             fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
+                            color: colors.textPrimary,
                           ),
                         ),
-                        const Text(
+                        Text(
                           '49',
                           style: TextStyle(
                             fontSize: 52,
                             fontWeight: FontWeight.w900,
-                            color: AppTheme.textPrimary,
+                            color: colors.textPrimary,
                             letterSpacing: -1.5,
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Text(
+                        Text(
                           'USD / month',
                           style: TextStyle(
                             fontSize: 14,
-                            color: AppTheme.textSecondary,
+                            color: colors.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -194,13 +187,13 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppTheme.success.withOpacity(0.15),
+                        color: colors.success.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text(
+                      child: Text(
                         '✨ Unlimited Videos on Any Platform',
                         style: TextStyle(
-                          color: AppTheme.success,
+                          color: colors.success,
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
                         ),
@@ -208,7 +201,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    const Divider(color: AppTheme.cardBorder),
+                    Divider(color: colors.cardBorder),
                     const SizedBox(height: 16),
 
                     // Features checklist
@@ -229,7 +222,6 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     ? null
                     : () => _completeOnboardingAndEnterDashboard(subscribed: true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
                   minimumSize: const Size.fromHeight(56),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -264,10 +256,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   onPressed: _isProcessing
                       ? null
                       : () => _completeOnboardingAndEnterDashboard(subscribed: false),
-                  child: const Text(
+                  child: Text(
                     'Continue to Dashboard (Explore First)',
                     style: TextStyle(
-                      color: AppTheme.textSecondary,
+                      color: colors.textSecondary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       decoration: TextDecoration.underline,
@@ -277,12 +269,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
               ),
               const SizedBox(height: 12),
 
-              const Text(
+              Text(
                 'Cancel anytime in iOS App Store Subscriptions. Mockup billing simulation.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 11,
-                  color: AppTheme.textMuted,
+                  color: colors.textMuted,
                 ),
               ),
             ],
@@ -293,6 +285,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   }
 
   Widget _buildFeatureItem(String title) {
+    final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -302,11 +295,11 @@ class _PaywallScreenState extends State<PaywallScreen> {
             height: 22,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppTheme.primary.withOpacity(0.2),
+              color: colors.accent.withValues(alpha: 0.2),
             ),
-            child: const Icon(
+            child: Icon(
               CupertinoIcons.checkmark,
-              color: AppTheme.primaryLight,
+              color: colors.accent,
               size: 13,
             ),
           ),
@@ -314,9 +307,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
-                color: AppTheme.textPrimary,
+                color: colors.textPrimary,
                 fontWeight: FontWeight.w500,
               ),
             ),

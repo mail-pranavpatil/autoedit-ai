@@ -121,8 +121,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colors.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -139,15 +140,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: 68,
                       height: 68,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [AppTheme.primary, AppTheme.accent],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: colors.accent,
                         borderRadius: BorderRadius.circular(18),
                         boxShadow: [
                           BoxShadow(
-                            color: AppTheme.primary.withOpacity(0.35),
+                            color: colors.accent.withValues(alpha: 0.35),
                             blurRadius: 20,
                             offset: const Offset(0, 8),
                           ),
@@ -161,23 +158,23 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  const Text(
+                  Text(
                     'Welcome Back',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
+                      color: colors.textPrimary,
                       letterSpacing: -0.5,
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Sign in to manage your AI content pipeline',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
-                      color: AppTheme.textSecondary,
+                      color: colors.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -186,18 +183,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppTheme.danger.withOpacity(0.12),
+                        color: colors.danger.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppTheme.danger.withOpacity(0.3)),
+                        border: Border.all(color: colors.danger.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.error_outline, color: AppTheme.danger, size: 20),
+                          Icon(Icons.error_outline, color: colors.danger, size: 20),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               _errorMessage!,
-                              style: const TextStyle(color: AppTheme.danger, fontSize: 13),
+                              style: TextStyle(color: colors.danger, fontSize: 13),
                             ),
                           ),
                         ],
@@ -211,11 +208,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: AppTheme.textPrimary),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: colors.textPrimary),
+                    decoration: InputDecoration(
                       labelText: 'Email Address',
-                      labelStyle: TextStyle(color: AppTheme.textSecondary),
-                      prefixIcon: Icon(CupertinoIcons.mail, color: AppTheme.textSecondary),
+                      labelStyle: TextStyle(color: colors.textSecondary),
+                      prefixIcon: Icon(CupertinoIcons.mail, color: colors.textSecondary),
                       hintText: 'creator@example.com',
                     ),
                     validator: (value) {
@@ -236,16 +233,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _loginWithEmail(),
-                    style: const TextStyle(color: AppTheme.textPrimary),
+                    style: TextStyle(color: colors.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Password',
-                      labelStyle: const TextStyle(color: AppTheme.textSecondary),
-                      prefixIcon: const Icon(CupertinoIcons.lock, color: AppTheme.textSecondary),
+                      labelStyle: TextStyle(color: colors.textSecondary),
+                      prefixIcon: Icon(CupertinoIcons.lock, color: colors.textSecondary),
                       hintText: 'Enter your password',
                       suffixIcon: IconButton(
                         icon: Icon(
                           _obscurePassword ? CupertinoIcons.eye : CupertinoIcons.eye_slash,
-                          color: AppTheme.textSecondary,
+                          color: colors.textSecondary,
                         ),
                         onPressed: () {
                           setState(() => _obscurePassword = !_obscurePassword);
@@ -280,22 +277,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   // Below: one line divider with 'or'
                   Row(
                     children: [
-                      const Expanded(
-                        child: Divider(color: AppTheme.cardBorder, thickness: 1),
+                      Expanded(
+                        child: Divider(color: colors.cardBorder, thickness: 1),
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                         child: Text(
                           'or continue with',
                           style: TextStyle(
-                            color: AppTheme.textMuted.withOpacity(0.9),
+                            color: colors.textMuted.withValues(alpha: 0.9),
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
-                      const Expanded(
-                        child: Divider(color: AppTheme.cardBorder, thickness: 1),
+                      Expanded(
+                        child: Divider(color: colors.cardBorder, thickness: 1),
                       ),
                     ],
                   ),
@@ -305,9 +302,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   OutlinedButton.icon(
                     onPressed: _isLoading ? null : _loginWithGoogle,
                     style: OutlinedButton.styleFrom(
-                      backgroundColor: AppTheme.card,
-                      foregroundColor: AppTheme.textPrimary,
-                      side: const BorderSide(color: AppTheme.cardBorder),
+                      backgroundColor: colors.card,
+                      foregroundColor: colors.textPrimary,
+                      side: BorderSide(color: colors.cardBorder),
                       minimumSize: const Size.fromHeight(50),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -357,9 +354,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text(
+                      Text(
                         "Don't have an account? ",
-                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+                        style: TextStyle(color: colors.textSecondary, fontSize: 14),
                       ),
                       GestureDetector(
                         onTap: () {
@@ -367,10 +364,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             MaterialPageRoute(builder: (_) => const SignUpScreen()),
                           );
                         },
-                        child: const Text(
+                        child: Text(
                           'Sign up',
                           style: TextStyle(
-                            color: AppTheme.primaryLight,
+                            color: colors.accent,
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
                             decoration: TextDecoration.underline,

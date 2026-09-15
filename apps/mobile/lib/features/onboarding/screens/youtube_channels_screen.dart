@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../models/onboarding_models.dart';
@@ -75,9 +76,19 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
       _errorMessage = null;
     });
 
+    final supabaseToken = Supabase.instance.client.auth.currentSession?.accessToken;
+    if (supabaseToken == null) {
+      setState(() {
+        _isConnectingGoogle = false;
+        _errorMessage = 'Please sign in again before connecting YouTube.';
+      });
+      return;
+    }
+
     try {
       await FlutterWebAuth2.authenticate(
-        url: '${ApiClient.baseUrl}/api/channels/youtube/connect?platform=ios',
+        url: '${ApiClient.baseUrl}/api/channels/youtube/connect'
+            '?platform=ios&token=${Uri.encodeComponent(supabaseToken)}',
         callbackUrlScheme: 'autoedit',
       );
 
@@ -122,10 +133,11 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final selectedCount = _channels.where((c) => c.isSelected).length;
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colors.background,
       appBar: AppBar(
         title: const Text('Connect YouTube'),
         leading: IconButton(
@@ -147,7 +159,7 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                       height: 4,
                       margin: EdgeInsets.only(right: index < 4 ? 6 : 0),
                       decoration: BoxDecoration(
-                        color: index <= 1 ? AppTheme.primary : AppTheme.cardBorder,
+                        color: index <= 1 ? colors.accent : colors.cardBorder,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -156,21 +168,21 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
               ),
               const SizedBox(height: 24),
 
-              const Text(
+              Text(
                 'Select YouTube Channels',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                  color: colors.textPrimary,
                   letterSpacing: -0.5,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Sign in with your Google account to automatically import and manage your YouTube channels.',
                 style: TextStyle(
                   fontSize: 14,
-                  color: AppTheme.textSecondary,
+                  color: colors.textSecondary,
                   height: 1.4,
                 ),
               ),
@@ -181,13 +193,13 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                   padding: const EdgeInsets.all(12),
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: AppTheme.danger.withOpacity(0.12),
+                    color: colors.danger.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.danger.withOpacity(0.3)),
+                    border: Border.all(color: colors.danger.withValues(alpha: 0.3)),
                   ),
                   child: Text(
                     _errorMessage!,
-                    style: const TextStyle(color: AppTheme.danger, fontSize: 13),
+                    style: TextStyle(color: colors.danger, fontSize: 13),
                   ),
                 ),
               ],
@@ -208,8 +220,7 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                 onPressed: selectedCount > 0 ? _proceedToGoals : null,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: AppTheme.primary,
-                  disabledBackgroundColor: AppTheme.card,
+                  disabledBackgroundColor: colors.card,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -221,7 +232,7 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: selectedCount > 0 ? Colors.white : AppTheme.textMuted,
+                    color: selectedCount > 0 ? Colors.white : colors.textMuted,
                   ),
                 ),
               ),
@@ -233,13 +244,14 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
   }
 
   Widget _buildEmptyState() {
+    final colors = context.colors;
     return Center(
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: AppTheme.card,
+          color: colors.card,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppTheme.cardBorder),
+          border: Border.all(color: colors.cardBorder),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -248,33 +260,33 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                color: const Color(0xFFFF0000).withOpacity(0.12),
+                color: AppTheme.youtubeRed.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: const Center(
                 child: Icon(
                   Icons.play_circle_fill_rounded,
-                  color: Color(0xFFFF0000),
+                  color: AppTheme.youtubeRed,
                   size: 38,
                 ),
               ),
             ),
             const SizedBox(height: 18),
-            const Text(
+            Text(
               'No YouTube Channel Connected',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
+                color: colors.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Authenticate via Google to load your YouTube channels automatically without typing IDs manually.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                color: AppTheme.textSecondary,
+                color: colors.textSecondary,
                 height: 1.4,
               ),
             ),
@@ -293,12 +305,12 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                     : const GoogleLogo(size: 18),
                 label: Text(
                   _isConnectingGoogle ? 'Connecting in Safari...' : 'Connect YouTube with Google',
-                  style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                  style: TextStyle(fontWeight: FontWeight.w600, color: colors.textPrimary),
                 ),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppTheme.cardBorder),
+                  side: BorderSide(color: colors.cardBorder),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  backgroundColor: AppTheme.surface,
+                  backgroundColor: colors.surface,
                 ),
               ),
             ),
@@ -310,6 +322,7 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
   }
 
   Widget _buildChannelsList() {
+    final colors = context.colors;
     return ListView(
       children: [
         ..._channels.map((channel) {
@@ -318,13 +331,11 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
               color: isSelected
-                  ? AppTheme.primary.withOpacity(0.08)
-                  : AppTheme.card,
+                  ? colors.accent.withValues(alpha: 0.08)
+                  : colors.card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isSelected
-                    ? AppTheme.primary
-                    : AppTheme.cardBorder,
+                color: isSelected ? colors.accent : colors.cardBorder,
                 width: isSelected ? 1.5 : 1,
               ),
             ),
@@ -342,14 +353,14 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                     // Channel Avatar
                     CircleAvatar(
                       radius: 24,
-                      backgroundColor: AppTheme.cardBorder,
+                      backgroundColor: colors.cardBorder,
                       backgroundImage: channel.avatarUrl != null
                           ? NetworkImage(channel.avatarUrl!)
                           : null,
                       child: channel.avatarUrl == null
-                          ? const Icon(
+                          ? Icon(
                               Icons.play_circle_outline,
-                              color: AppTheme.textPrimary,
+                              color: colors.textPrimary,
                               size: 26,
                             )
                           : null,
@@ -363,18 +374,18 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                         children: [
                           Text(
                             channel.title,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: AppTheme.textPrimary,
+                              color: colors.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             channel.subscriberCount ?? 'Connected',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
-                              color: AppTheme.textSecondary,
+                              color: colors.textSecondary,
                             ),
                           ),
                         ],
@@ -386,14 +397,10 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
                       width: 24,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppTheme.primary
-                            : Colors.transparent,
+                        color: isSelected ? colors.accent : Colors.transparent,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isSelected
-                              ? AppTheme.primary
-                              : AppTheme.textSecondary,
+                          color: isSelected ? colors.accent : colors.textSecondary,
                           width: 2,
                         ),
                       ),
@@ -429,11 +436,11 @@ class _YouTubeChannelsScreenState extends State<YouTubeChannelsScreen> {
               : 'Connect Another Google Account'),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 14),
-            side: const BorderSide(color: AppTheme.cardBorder),
+            side: BorderSide(color: colors.cardBorder),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
-            foregroundColor: AppTheme.textPrimary,
+            foregroundColor: colors.textPrimary,
           ),
         ),
       ],

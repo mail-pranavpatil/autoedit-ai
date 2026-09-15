@@ -48,8 +48,9 @@ class _MotivationScreenState extends State<MotivationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colors.background,
       appBar: AppBar(
         title: const Text('Your Motivation'),
         leading: IconButton(
@@ -59,10 +60,10 @@ class _MotivationScreenState extends State<MotivationScreen> {
         actions: [
           TextButton(
             onPressed: () => _proceedToPaywall(isSkipped: true),
-            child: const Text(
+            child: Text(
               'Skip',
               style: TextStyle(
-                color: AppTheme.textSecondary,
+                color: colors.textSecondary,
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
@@ -84,7 +85,7 @@ class _MotivationScreenState extends State<MotivationScreen> {
                       height: 4,
                       margin: EdgeInsets.only(right: index < 4 ? 6 : 0),
                       decoration: BoxDecoration(
-                        color: AppTheme.primary,
+                        color: colors.accent,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -95,12 +96,12 @@ class _MotivationScreenState extends State<MotivationScreen> {
 
               Row(
                 children: [
-                  const Text(
+                  Text(
                     'Why start creating?',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary,
+                      color: colors.textPrimary,
                       letterSpacing: -0.5,
                     ),
                   ),
@@ -108,14 +109,14 @@ class _MotivationScreenState extends State<MotivationScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.08),
+                      color: colors.cardBorder.withValues(alpha: 0.4),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Optional',
                       style: TextStyle(
                         fontSize: 11,
-                        color: AppTheme.textMuted,
+                        color: colors.textMuted,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -123,11 +124,11 @@ class _MotivationScreenState extends State<MotivationScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Tell us what drives you. We use this to fine-tune your video narrative hooks and content strategy.',
                 style: TextStyle(
                   fontSize: 14,
-                  color: AppTheme.textSecondary,
+                  color: colors.textSecondary,
                   height: 1.4,
                 ),
               ),
@@ -147,14 +148,14 @@ class _MotivationScreenState extends State<MotivationScreen> {
                           return FilterChip(
                             label: Text(reason),
                             selected: isSelected,
-                            selectedColor: AppTheme.primary.withOpacity(0.25),
-                            backgroundColor: AppTheme.card,
+                            selectedColor: colors.accent.withValues(alpha: 0.25),
+                            backgroundColor: colors.card,
                             side: BorderSide(
-                              color: isSelected ? AppTheme.primary : AppTheme.cardBorder,
+                              color: isSelected ? colors.accent : colors.cardBorder,
                               width: isSelected ? 1.5 : 1,
                             ),
                             labelStyle: TextStyle(
-                              color: isSelected ? AppTheme.textPrimary : AppTheme.textSecondary,
+                              color: isSelected ? colors.textPrimary : colors.textSecondary,
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                               fontSize: 13,
                             ),
@@ -176,7 +177,7 @@ class _MotivationScreenState extends State<MotivationScreen> {
                       TextFormField(
                         controller: _reasonController,
                         maxLines: 4,
-                        style: const TextStyle(color: AppTheme.textPrimary),
+                        style: TextStyle(color: colors.textPrimary),
                         decoration: const InputDecoration(
                           hintText: 'Share more about your dream channel or content vision... (Optional)',
                           alignLabelWithHint: true,
@@ -188,28 +189,21 @@ class _MotivationScreenState extends State<MotivationScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppTheme.primary.withOpacity(0.15),
-                              AppTheme.accent.withOpacity(0.08),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
+                          color: colors.accent.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+                          border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
                         ),
-                        child: const Row(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('💡', style: TextStyle(fontSize: 22)),
-                            SizedBox(width: 12),
+                            const Text('💡', style: TextStyle(fontSize: 22)),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Text(
                                 'Creators who post 3+ AI-assisted videos per week reach their 10,000 subscriber goal 4.2x faster.',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: AppTheme.textPrimary,
+                                  color: colors.textPrimary,
                                   height: 1.4,
                                 ),
                               ),
@@ -230,15 +224,15 @@ class _MotivationScreenState extends State<MotivationScreen> {
                     child: OutlinedButton(
                       onPressed: () => _proceedToPaywall(isSkipped: true),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppTheme.cardBorder),
+                        side: BorderSide(color: colors.cardBorder),
                         minimumSize: const Size.fromHeight(52),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Text(
+                      child: Text(
                         'Skip',
-                        style: TextStyle(color: AppTheme.textSecondary),
+                        style: TextStyle(color: colors.textSecondary),
                       ),
                     ),
                   ),

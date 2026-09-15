@@ -5,12 +5,15 @@ import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/storage/session_manager.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/theme_controller.dart';
+import '../../../core/utils/video_import.dart';
 import '../../../core/widgets/glass_container.dart';
 import '../../../core/widgets/ios_pill_navbar.dart';
 import '../../../core/widgets/trend_sparkline.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../auth/services/auth_service.dart';
 import '../../onboarding/models/onboarding_models.dart';
+import '../../videos/screens/videos_grid_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -20,7 +23,6 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final ImagePicker _picker = ImagePicker();
   Map<String, dynamic>? _user;
   List<dynamic> _channels = [];
   bool _isLoading = true;
@@ -87,79 +89,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _showCreateActionSheet() {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (ctx) => CupertinoActionSheet(
-        title: const Text('Add Video to Eren AI'),
-        message: const Text('Choose a source to import talking-head footage for AI automated editing'),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _pickVideo(ImageSource.gallery);
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.photo_on_rectangle, size: 20),
-                SizedBox(width: 8),
-                Text('Choose from Photos / Camera Roll'),
-              ],
-            ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _pickVideo(ImageSource.camera);
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.camera, size: 20),
-                SizedBox(width: 8),
-                Text('Record Video with Camera'),
-              ],
-            ),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          isDefaultAction: true,
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Cancel'),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickVideo(ImageSource source) async {
-    try {
-      final XFile? video = await _picker.pickVideo(
-        source: source,
-        maxDuration: const Duration(minutes: 10),
-      );
-      if (video != null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Selected video: ${video.name}. Uploading to AI pipeline...'),
-            backgroundColor: AppTheme.success,
-          ),
-        );
-        // Refresh project list after import
-        _loadDashboardData();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not access video: $e'),
-          backgroundColor: AppTheme.danger,
-        ),
-      );
-    }
-  }
-
   Future<void> _logout() async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
@@ -189,6 +118,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
   }
+
+  void _pickThemeMode() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: const Text('Appearance'),
+        actions: [
+          for (final mode in ThemeMode.values)
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                themeModeNotifier.value = mode;
+                SessionManager.setThemeMode(mode);
+                setState(() {});
+              },
+              child: Text(_themeModeLabel(mode)),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+  }
+
+  String _themeModeLabel(ThemeMode mode) => switch (mode) {
+        ThemeMode.light => 'Light',
+        ThemeMode.dark => 'Dark',
+        ThemeMode.system => 'System',
+      };
 
   String get _activeChannelTitle {
     if (_channels.isNotEmpty && _channels.first['channelTitle'] != null) {
@@ -243,13 +204,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: AppTheme.background,
-      extendBody: true, // Content flows behind floating glass pill bar
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(60),
-        child: _buildHeaderGlassBar(),
-      ),
+      backgroundColor: colors.background,
+      extendBody: true, // Content flows behind floating pill bar
+      appBar: _selectedBottomTab == 1
+          ? null
+          : PreferredSize(
+              preferredSize: const Size.fromHeight(60),
+              child: _buildHeaderBar(),
+            ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -258,36 +223,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 index: _selectedBottomTab,
                 children: [
                   _buildHomeTab(),
-                  _buildVideosTab(),
+                  VideosGridScreen(
+                    userInitial: _userInitial,
+                    onAvatarTap: () => setState(() => _selectedBottomTab = 3),
+                  ),
                   _buildGoalsTab(),
                   _buildSettingsTab(),
                 ],
               ),
             ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: isDark ? Colors.white : Colors.black,
+        shape: const CircleBorder(),
+        onPressed: () => showVideoImportSheet(context, onImported: _loadDashboardData),
+        child: Icon(Icons.add_rounded, color: isDark ? Colors.black : Colors.white),
+      ),
       bottomNavigationBar: IOSPillNavBar(
         currentIndex: _selectedBottomTab,
         onTap: (idx) => setState(() => _selectedBottomTab = idx),
         items: _navItems,
-        onAddTap: _showCreateActionSheet,
       ),
     );
   }
 
+  String get _userInitial {
+    final name = _user?['name'] as String?;
+    return (name != null && name.isNotEmpty) ? name[0].toUpperCase() : 'C';
+  }
 
-  // Apple Frosted Glass Top App Bar
-  Widget _buildHeaderGlassBar() {
-    return GlassContainer(
-      borderRadius: 0,
-      blur: 24,
+  // Top App Bar (Home/Goals/Settings — Videos tab owns its own header)
+  Widget _buildHeaderBar() {
+    final colors = context.colors;
+    return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 4,
         left: 18,
         right: 18,
         bottom: 10,
       ),
-      color: AppTheme.background.withValues(alpha: 0.75),
-      border: const Border(
-        bottom: BorderSide(color: AppTheme.glassBorder, width: 0.8),
+      decoration: BoxDecoration(
+        color: colors.background,
+        border: Border(bottom: BorderSide(color: colors.cardBorder, width: 1)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -298,27 +274,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppTheme.primary, AppTheme.accent],
-                  ),
+                  color: colors.accent,
                   borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.primary.withValues(alpha: 0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
                 ),
                 child: const Icon(CupertinoIcons.play_fill, size: 18, color: Colors.white),
               ),
               const SizedBox(width: 10),
-              const Text(
+              Text(
                 'Eren AI Studio',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
-                  color: AppTheme.textPrimary,
+                  color: colors.textPrimary,
                   letterSpacing: -0.4,
                 ),
               ),
@@ -328,9 +295,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
+              color: colors.card,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppTheme.glassBorder),
+              border: Border.all(color: colors.cardBorder),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -345,10 +312,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   constraints: const BoxConstraints(maxWidth: 110),
                   child: Text(
                     _activeChannelTitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary,
+                      color: colors.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -364,6 +331,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // TAB 0: HOME / DASHBOARD
   Widget _buildHomeTab() {
+    final colors = context.colors;
     final userName = _user?['name'] ?? 'Creator';
 
     return SingleChildScrollView(
@@ -374,22 +342,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           // Greeting & Status
           Text(
-            'Hey, $userName 👋',
-            style: const TextStyle(
+            'Hey, $userName',
+            style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
+              color: colors.textPrimary,
               letterSpacing: -0.5,
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'AI automation is active • Channel pipeline running',
-            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            style: TextStyle(fontSize: 13, color: colors.textSecondary),
           ),
           const SizedBox(height: 20),
 
-          // Growth Goals Glass Card
+          // Growth Goals Card
           if (!_hasGoals)
             _buildGoalsEmptyState()
           else if (!_hasLiveStats)
@@ -404,17 +372,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          Icon(CupertinoIcons.chart_pie_fill,
-                              color: AppTheme.primaryLight, size: 20),
-                          SizedBox(width: 8),
+                          Icon(CupertinoIcons.chart_pie_fill, color: colors.accent, size: 20),
+                          const SizedBox(width: 8),
                           Text(
                             'Quarterly Goal Progress',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary,
+                              color: colors.textPrimary,
                             ),
                           ),
                         ],
@@ -428,7 +395,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     label: 'Channel Views (Target: ${_formatNumber(_targetViews)})',
                     current: _currentViews ?? 0,
                     target: _targetViews,
-                    color: AppTheme.primary,
+                    color: colors.accent,
                   ),
                   const SizedBox(height: 14),
 
@@ -436,7 +403,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     label: 'Channel Subscribers (Target: ${_formatNumber(_targetSubs)})',
                     current: _currentSubs ?? 0,
                     target: _targetSubs,
-                    color: AppTheme.accent,
+                    color: colors.accent,
                   ),
                 ],
               ),
@@ -445,16 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           // Primary Quick Action: Camera Roll Import
           ElevatedButton.icon(
-            onPressed: () => _pickVideo(ImageSource.gallery),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              minimumSize: const Size.fromHeight(54),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-              shadowColor: AppTheme.primary.withValues(alpha: 0.4),
-              elevation: 8,
-            ),
+            onPressed: () => pickAndUploadVideo(context, ImageSource.gallery, onImported: _loadDashboardData),
             icon: const Icon(CupertinoIcons.camera_fill, size: 20),
             label: const Text(
               'Import Video from Camera Roll',
@@ -467,21 +425,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Active Video Queue',
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                  color: colors.textPrimary,
                 ),
               ),
               GestureDetector(
                 onTap: () => setState(() => _selectedBottomTab = 1),
-                child: const Text(
+                child: Text(
                   'See All',
                   style: TextStyle(
                     fontSize: 13,
-                    color: AppTheme.primaryLight,
+                    color: colors.accent,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -498,13 +456,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               final total = (p['totalVideos'] as int?) ?? 0;
 
               String statusStr = 'QUEUED';
-              Color statusClr = AppTheme.warning;
+              Color statusClr = colors.warning;
               if (ready > 0) {
                 statusStr = 'READY ($ready)';
-                statusClr = AppTheme.success;
+                statusClr = colors.success;
               } else if (processing > 0) {
                 statusStr = 'PROCESSING';
-                statusClr = AppTheme.primaryLight;
+                statusClr = colors.accent;
               }
 
               return Padding(
@@ -524,17 +482,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
               borderRadius: 18,
               child: Column(
                 children: [
-                  const Icon(CupertinoIcons.film, color: AppTheme.primaryLight, size: 34),
+                  Icon(CupertinoIcons.film, color: colors.accent, size: 34),
                   const SizedBox(height: 10),
-                  const Text(
+                  Text(
                     'Queue is Empty',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: colors.textPrimary),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Tap the + button below or import a talking-head video clip to start creating AI videos.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+                    style: TextStyle(fontSize: 13, color: colors.textSecondary, height: 1.4),
                   ),
                 ],
               ),
@@ -546,128 +504,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // TAB 1: VIDEOS / PROJECTS
-  Widget _buildVideosTab() {
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 110),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Your Video Projects',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'All rendered and scheduled AI videos for distribution',
-            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-          ),
-          const SizedBox(height: 18),
-
-          // Filter Pills
-          Row(
-            children: [
-              _buildFilterPill('All (8)', isSelected: true),
-              const SizedBox(width: 8),
-              _buildFilterPill('Scheduled (3)'),
-              const SizedBox(width: 8),
-              _buildFilterPill('In Progress (2)'),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Dynamic Video Project Items
-          if (_projects.isNotEmpty) ...[
-            ..._projects.map((p) {
-              final ready = (p['readyVideos'] as int?) ?? 0;
-              final processing = (p['processingVideos'] as int?) ?? 0;
-              final total = (p['totalVideos'] as int?) ?? 0;
-
-              String statusStr = 'QUEUED';
-              Color statusClr = AppTheme.warning;
-              if (ready > 0) {
-                statusStr = 'READY';
-                statusClr = AppTheme.success;
-              } else if (processing > 0) {
-                statusStr = 'PROCESSING';
-                statusClr = AppTheme.primaryLight;
-              }
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _buildProjectItem(
-                  title: p['name'] ?? 'Untitled Video Project',
-                  channel: _activeChannelTitle,
-                  duration: '$total video${total == 1 ? "" : "s"}',
-                  status: statusStr,
-                  statusColor: statusClr,
-                ),
-              );
-            }),
-          ] else ...[
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: Column(
-                  children: [
-                    const Icon(CupertinoIcons.film_fill, size: 54, color: AppTheme.cardBorder),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'No Video Projects Yet',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Create your first AI video project by importing footage.',
-                      style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      onPressed: () => _pickVideo(ImageSource.gallery),
-                      icon: const Icon(CupertinoIcons.add, size: 18),
-                      label: const Text('Import First Video'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   // TAB 2: GOALS
   Widget _buildGoalsTab() {
+    final colors = context.colors;
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 110),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'Channel Growth Targets',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
+              color: colors.textPrimary,
               letterSpacing: -0.5,
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Live milestone velocity and pacing for YouTube',
-            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            style: TextStyle(fontSize: 13, color: colors.textSecondary),
           ),
           const SizedBox(height: 20),
 
@@ -688,10 +546,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Expanded(
                         child: Text(
                           _activeChannelTitle,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
+                            color: colors.textPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -706,31 +564,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     label: 'Quarterly Views (Target: ${_formatNumber(_targetViews)})',
                     current: _currentViews ?? 0,
                     target: _targetViews,
-                    color: AppTheme.primary,
+                    color: colors.accent,
                   ),
                   const SizedBox(height: 16),
                   _buildGoalProgress(
                     label: 'Subscribers (Target: ${_formatNumber(_targetSubs)})',
                     current: _currentSubs ?? 0,
                     target: _targetSubs,
-                    color: AppTheme.accent,
+                    color: colors.accent,
                   ),
                   const SizedBox(height: 18),
-                  const Divider(color: AppTheme.glassBorder),
+                  Divider(color: colors.cardBorder),
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      Text(
                         'Deadline Target:',
-                        style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                        style: TextStyle(fontSize: 13, color: colors.textSecondary),
                       ),
                       Text(
                         _targetDate != null ? _formatDate(_targetDate!) : '—',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.primaryLight,
+                          color: colors.accent,
                         ),
                       ),
                     ],
@@ -749,23 +607,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildTrendSection() {
+    final colors = context.colors;
     if (_history.length < 2) {
       return GlassContainer(
         padding: const EdgeInsets.all(20),
         borderRadius: 18,
-        child: const Column(
+        child: Column(
           children: [
-            Icon(CupertinoIcons.graph_square, color: AppTheme.primaryLight, size: 34),
-            SizedBox(height: 10),
+            Icon(CupertinoIcons.graph_square, color: colors.accent, size: 34),
+            const SizedBox(height: 10),
             Text(
               'Growth Trend',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: colors.textPrimary),
             ),
-            SizedBox(height: 4),
+            const SizedBox(height: 4),
             Text(
               'Check back tomorrow — we started tracking your growth from today.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+              style: TextStyle(fontSize: 13, color: colors.textSecondary, height: 1.4),
             ),
           ],
         ),
@@ -781,20 +640,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Growth Trend',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colors.textPrimary),
           ),
           const SizedBox(height: 16),
-          _buildTrendRow('Views', views, AppTheme.primary),
+          _buildTrendRow('Views', views, colors.accent),
           const SizedBox(height: 18),
-          _buildTrendRow('Subscribers', subs, AppTheme.accent),
+          _buildTrendRow('Subscribers', subs, colors.accent),
         ],
       ),
     );
   }
 
   Widget _buildTrendRow(String label, List<double> series, Color color) {
+    final colors = context.colors;
     final delta = series.last - series.first;
     final isUp = delta >= 0;
     return Column(
@@ -803,13 +663,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+            Text(label, style: TextStyle(fontSize: 13, color: colors.textSecondary)),
             Text(
               '${isUp ? '+' : ''}${_formatNumber(delta.toInt())}',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
-                color: isUp ? AppTheme.success : AppTheme.danger,
+                color: isUp ? colors.success : colors.danger,
               ),
             ),
           ],
@@ -823,6 +683,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // TAB 3: SETTINGS
   Widget _buildSettingsTab() {
+    final colors = context.colors;
     final email = _user?['email'] ?? 'creator@example.com';
     final name = _user?['name'] ?? 'Creator';
 
@@ -832,12 +693,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'Settings & Account',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
+              color: colors.textPrimary,
               letterSpacing: -0.5,
             ),
           ),
@@ -851,13 +712,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 CircleAvatar(
                   radius: 26,
-                  backgroundColor: AppTheme.primary.withValues(alpha: 0.25),
+                  backgroundColor: colors.accent.withValues(alpha: 0.18),
                   child: Text(
                     name.isNotEmpty ? name[0].toUpperCase() : 'C',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryLight,
+                      color: colors.accent,
                     ),
                   ),
                 ),
@@ -868,16 +729,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: AppTheme.textPrimary,
+                          color: colors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         email,
-                        style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                        style: TextStyle(fontSize: 13, color: colors.textSecondary),
                       ),
                     ],
                   ),
@@ -885,9 +746,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppTheme.primary, AppTheme.accent],
-                    ),
+                    color: colors.accent,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
@@ -911,31 +770,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(CupertinoIcons.play_rectangle_fill,
-                      color: AppTheme.youtubeRed),
+                  leading: const Icon(CupertinoIcons.play_rectangle_fill, color: AppTheme.youtubeRed),
                   title: const Text('Connected Channels'),
                   subtitle: Text('$_activeChannelTitle • Active'),
-                  trailing: const Icon(CupertinoIcons.chevron_forward,
-                      color: AppTheme.textMuted, size: 18),
+                  trailing: Icon(CupertinoIcons.chevron_forward, color: colors.textMuted, size: 18),
                   onTap: () {},
                 ),
-                const Divider(color: AppTheme.glassBorder, height: 1),
+                Divider(color: colors.cardBorder, height: 1),
                 ListTile(
-                  leading: const Icon(CupertinoIcons.creditcard_fill,
-                      color: AppTheme.success),
+                  leading: Icon(CupertinoIcons.creditcard_fill, color: colors.success),
                   title: const Text('Subscription Plan'),
                   subtitle: const Text('Pro Creator Pass • \$49/month'),
-                  trailing: const Icon(CupertinoIcons.chevron_forward,
-                      color: AppTheme.textMuted, size: 18),
+                  trailing: Icon(CupertinoIcons.chevron_forward, color: colors.textMuted, size: 18),
                   onTap: () {},
                 ),
-                const Divider(color: AppTheme.glassBorder, height: 1),
+                Divider(color: colors.cardBorder, height: 1),
                 ListTile(
-                  leading: const Icon(CupertinoIcons.lock_shield_fill,
-                      color: AppTheme.primaryLight),
+                  leading: Icon(CupertinoIcons.circle_lefthalf_fill, color: colors.accent),
+                  title: const Text('Appearance'),
+                  subtitle: Text(_themeModeLabel(themeModeNotifier.value)),
+                  trailing: Icon(CupertinoIcons.chevron_forward, color: colors.textMuted, size: 18),
+                  onTap: _pickThemeMode,
+                ),
+                Divider(color: colors.cardBorder, height: 1),
+                ListTile(
+                  leading: Icon(CupertinoIcons.lock_shield_fill, color: colors.accent),
                   title: const Text('Security & Privacy'),
-                  trailing: const Icon(CupertinoIcons.chevron_forward,
-                      color: AppTheme.textMuted, size: 18),
+                  trailing: Icon(CupertinoIcons.chevron_forward, color: colors.textMuted, size: 18),
                   onTap: () {},
                 ),
               ],
@@ -947,8 +808,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           OutlinedButton.icon(
             onPressed: _logout,
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppTheme.danger, width: 1.2),
-              foregroundColor: AppTheme.danger,
+              side: BorderSide(color: colors.danger, width: 1.2),
+              foregroundColor: colors.danger,
               minimumSize: const Size.fromHeight(50),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -962,35 +823,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildFilterPill(String label, {bool isSelected = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        color: isSelected
-            ? AppTheme.primary.withValues(alpha: 0.25)
-            : Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isSelected ? AppTheme.primaryLight : AppTheme.glassBorder,
-          width: 1,
-        ),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-          color: isSelected ? AppTheme.primaryLight : AppTheme.textSecondary,
-        ),
-      ),
-    );
-  }
-
   Widget _buildVelocityBadge() {
+    final colors = context.colors;
     final velocity = _velocityPercent;
     if (velocity == null) return const SizedBox.shrink();
     final isAhead = velocity >= 0;
-    final color = isAhead ? AppTheme.success : AppTheme.danger;
+    final color = isAhead ? colors.success : colors.danger;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -998,7 +836,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        'VELOCITY ${isAhead ? '+' : ''}${velocity.toStringAsFixed(0)}% ${isAhead ? '🚀' : '⚠️'}',
+        'VELOCITY ${isAhead ? '+' : ''}${velocity.toStringAsFixed(0)}%',
         style: TextStyle(
           color: color,
           fontSize: 10,
@@ -1010,12 +848,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildPacingBadge() {
+    final colors = context.colors;
     final label = _pacingLabel;
     if (label == null) return const SizedBox.shrink();
     final color = switch (label) {
-      'Pacing Ahead' => AppTheme.success,
-      'Pacing Behind' => AppTheme.danger,
-      _ => AppTheme.warning,
+      'Pacing Ahead' => colors.success,
+      'Pacing Behind' => colors.danger,
+      _ => colors.warning,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1031,22 +870,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildGoalsEmptyState() {
+    final colors = context.colors;
     return GlassContainer(
       padding: const EdgeInsets.all(20),
       borderRadius: 18,
       child: Column(
         children: [
-          const Icon(CupertinoIcons.chart_pie, color: AppTheme.primaryLight, size: 34),
+          Icon(CupertinoIcons.chart_pie, color: colors.accent, size: 34),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'No Growth Goals Set',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: colors.textPrimary),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Set a views and subscriber target during onboarding to track your pacing here.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+            style: TextStyle(fontSize: 13, color: colors.textSecondary, height: 1.4),
           ),
         ],
       ),
@@ -1054,22 +894,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildStatsUnavailableCard() {
+    final colors = context.colors;
     return GlassContainer(
       padding: const EdgeInsets.all(20),
       borderRadius: 18,
       child: Column(
         children: [
-          const Icon(CupertinoIcons.exclamationmark_triangle, color: AppTheme.warning, size: 34),
+          Icon(CupertinoIcons.exclamationmark_triangle, color: colors.warning, size: 34),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'Stats Unavailable',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textPrimary),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: colors.textPrimary),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Reconnect your YouTube channel to pull in live view and subscriber counts.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+            style: TextStyle(fontSize: 13, color: colors.textSecondary, height: 1.4),
           ),
         ],
       ),
@@ -1082,6 +923,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required int target,
     required Color color,
   }) {
+    final colors = context.colors;
     final progress = target > 0 ? (current / target).clamp(0.0, 1.0) : 0.0;
     final percent = (progress * 100).toInt();
 
@@ -1094,7 +936,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                style: TextStyle(fontSize: 13, color: colors.textSecondary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1102,10 +944,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(width: 8),
             Text(
               '${_formatNumber(current)} / ${_formatNumber(target)} ($percent%)',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
+                color: colors.textPrimary,
               ),
             ),
           ],
@@ -1115,7 +957,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           borderRadius: BorderRadius.circular(6),
           child: LinearProgressIndicator(
             value: progress,
-            backgroundColor: Colors.white.withValues(alpha: 0.08),
+            backgroundColor: colors.cardBorder,
             valueColor: AlwaysStoppedAnimation<Color>(color),
             minHeight: 7,
           ),
@@ -1131,6 +973,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String status,
     required Color statusColor,
   }) {
+    final colors = context.colors;
     return GlassContainer(
       borderRadius: 16,
       padding: const EdgeInsets.all(14),
@@ -1140,11 +983,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
+              color: colors.accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(CupertinoIcons.play_circle_fill,
-                color: AppTheme.primaryLight, size: 26),
+            child: Icon(CupertinoIcons.play_circle_fill, color: colors.accent, size: 26),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1153,10 +995,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
+                    color: colors.textPrimary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1166,14 +1008,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     Text(
                       channel,
-                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                      style: TextStyle(fontSize: 11, color: colors.textSecondary),
                     ),
                     const SizedBox(width: 6),
-                    const Text('•', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                    Text('•', style: TextStyle(color: colors.textMuted, fontSize: 11)),
                     const SizedBox(width: 6),
                     Text(
                       duration,
-                      style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                      style: TextStyle(fontSize: 11, color: colors.textSecondary),
                     ),
                   ],
                 ),

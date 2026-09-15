@@ -23,8 +23,9 @@ class _ExperienceScreenState extends State<ExperienceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colors.background,
       appBar: AppBar(
         title: const Text('Experience Level'),
         leading: IconButton(
@@ -46,7 +47,7 @@ class _ExperienceScreenState extends State<ExperienceScreen> {
                       height: 4,
                       margin: EdgeInsets.only(right: index < 4 ? 6 : 0),
                       decoration: BoxDecoration(
-                        color: index <= 3 ? AppTheme.primary : AppTheme.cardBorder,
+                        color: index <= 3 ? colors.accent : colors.cardBorder,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -55,21 +56,21 @@ class _ExperienceScreenState extends State<ExperienceScreen> {
               ),
               const SizedBox(height: 24),
 
-              const Text(
+              Text(
                 'How much do you know about video editing?',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                  color: colors.textPrimary,
                   letterSpacing: -0.5,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Eren AI customizes video pacing, caption styles, and automation levels based on your experience.',
                 style: TextStyle(
                   fontSize: 14,
-                  color: AppTheme.textSecondary,
+                  color: colors.textSecondary,
                   height: 1.4,
                 ),
               ),
@@ -81,31 +82,28 @@ class _ExperienceScreenState extends State<ExperienceScreen> {
                     final isSelected = _selectedExperience == exp;
 
                     IconData iconData;
-                    Color accentColor;
                     switch (exp) {
                       case EditingExperience.noob:
                         iconData = CupertinoIcons.wand_stars;
-                        accentColor = AppTheme.primary;
                         break;
                       case EditingExperience.rookie:
                         iconData = CupertinoIcons.scissors;
-                        accentColor = AppTheme.accent;
                         break;
                       case EditingExperience.pro:
                         iconData = CupertinoIcons.rocket_fill;
-                        accentColor = AppTheme.warning;
                         break;
                     }
+                    final accentColor = colors.accent;
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 14),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         decoration: BoxDecoration(
-                          color: isSelected ? accentColor.withOpacity(0.12) : AppTheme.card,
+                          color: isSelected ? accentColor.withValues(alpha: 0.12) : colors.card,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: isSelected ? accentColor : AppTheme.cardBorder,
+                            color: isSelected ? accentColor : colors.cardBorder,
                             width: isSelected ? 2 : 1,
                           ),
                         ),
@@ -123,7 +121,7 @@ class _ExperienceScreenState extends State<ExperienceScreen> {
                                   width: 46,
                                   height: 46,
                                   decoration: BoxDecoration(
-                                    color: accentColor.withOpacity(0.18),
+                                    color: accentColor.withValues(alpha: 0.18),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Icon(iconData, color: accentColor, size: 24),
@@ -138,10 +136,10 @@ class _ExperienceScreenState extends State<ExperienceScreen> {
                                         children: [
                                           Text(
                                             exp.title,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 18,
                                               fontWeight: FontWeight.bold,
-                                              color: AppTheme.textPrimary,
+                                              color: colors.textPrimary,
                                             ),
                                           ),
                                           if (isSelected)
@@ -156,16 +154,16 @@ class _ExperienceScreenState extends State<ExperienceScreen> {
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
                                           color: isSelected
-                                              ? AppTheme.textPrimary
-                                              : AppTheme.textSecondary,
+                                              ? colors.textPrimary
+                                              : colors.textSecondary,
                                         ),
                                       ),
                                       const SizedBox(height: 6),
                                       Text(
                                         exp.description,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 13,
-                                          color: AppTheme.textSecondary,
+                                          color: colors.textSecondary,
                                           height: 1.3,
                                         ),
                                       ),

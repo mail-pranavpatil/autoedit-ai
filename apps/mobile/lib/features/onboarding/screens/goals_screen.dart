@@ -58,18 +58,20 @@ class _GoalsScreenState extends State<GoalsScreen> {
   }
 
   Future<void> _pickDeadlineDate(ChannelGoal goal) async {
+    final colors = context.colors;
     final picked = await showDatePicker(
       context: context,
       initialDate: goal.targetDate,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
       builder: (context, child) {
+        final baseTheme = Theme.of(context);
         return Theme(
-          data: ThemeData.dark().copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: AppTheme.primary,
-              surface: AppTheme.card,
-              onSurface: AppTheme.textPrimary,
+          data: baseTheme.copyWith(
+            colorScheme: baseTheme.colorScheme.copyWith(
+              primary: colors.accent,
+              surface: colors.card,
+              onSurface: colors.textPrimary,
             ),
           ),
           child: child!,
@@ -121,11 +123,12 @@ class _GoalsScreenState extends State<GoalsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final currentChannel = widget.channels[_activeChannelIndex];
     final currentGoal = _goalsMap[currentChannel.id]!;
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: colors.background,
       appBar: AppBar(
         title: const Text('Channel Goals'),
         leading: IconButton(
@@ -147,7 +150,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       height: 4,
                       margin: EdgeInsets.only(right: index < 4 ? 6 : 0),
                       decoration: BoxDecoration(
-                        color: index <= 2 ? AppTheme.primary : AppTheme.cardBorder,
+                        color: index <= 2 ? colors.accent : colors.cardBorder,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -170,10 +173,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       return ChoiceChip(
                         label: Text(ch.title),
                         selected: isActive,
-                        selectedColor: AppTheme.primary,
-                        backgroundColor: AppTheme.card,
+                        selectedColor: colors.accent,
+                        backgroundColor: colors.card,
                         labelStyle: TextStyle(
-                          color: isActive ? Colors.white : AppTheme.textSecondary,
+                          color: isActive ? Colors.white : colors.textSecondary,
                           fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                         ),
                         onSelected: (_) {
@@ -191,19 +194,19 @@ class _GoalsScreenState extends State<GoalsScreen> {
 
               Text(
                 'Goals for ${currentChannel.title}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: AppTheme.textPrimary,
+                  color: colors.textPrimary,
                   letterSpacing: -0.4,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'How many views & subscribers are you targeting, and by when?',
                 style: TextStyle(
                   fontSize: 14,
-                  color: AppTheme.textSecondary,
+                  color: colors.textSecondary,
                 ),
               ),
               const SizedBox(height: 20),
@@ -217,23 +220,23 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: AppTheme.card,
+                          color: colors.card,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppTheme.cardBorder),
+                          border: Border.all(color: colors.cardBorder),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
+                            Row(
                               children: [
-                                Icon(CupertinoIcons.eye_fill, color: AppTheme.primaryLight, size: 20),
-                                SizedBox(width: 8),
+                                Icon(CupertinoIcons.eye_fill, color: colors.accent, size: 20),
+                                const SizedBox(width: 8),
                                 Text(
                                   'Target Views',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: AppTheme.textPrimary,
+                                    color: colors.textPrimary,
                                   ),
                                 ),
                               ],
@@ -246,13 +249,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                 return ActionChip(
                                   label: Text('${_formatNumber(preset)} views'),
                                   backgroundColor: isSelected
-                                      ? AppTheme.primary.withOpacity(0.2)
-                                      : AppTheme.surface,
+                                      ? colors.accent.withValues(alpha: 0.2)
+                                      : colors.surface,
                                   side: BorderSide(
-                                    color: isSelected ? AppTheme.primary : AppTheme.cardBorder,
+                                    color: isSelected ? colors.accent : colors.cardBorder,
                                   ),
                                   labelStyle: TextStyle(
-                                    color: isSelected ? AppTheme.primaryLight : AppTheme.textSecondary,
+                                    color: isSelected ? colors.accent : colors.textSecondary,
                                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                     fontSize: 12,
                                   ),
@@ -269,7 +272,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                             TextFormField(
                               controller: _viewsController,
                               keyboardType: TextInputType.number,
-                              style: const TextStyle(color: AppTheme.textPrimary),
+                              style: TextStyle(color: colors.textPrimary),
                               decoration: const InputDecoration(
                                 labelText: 'Custom Views Target',
                                 hintText: 'e.g. 75000',
@@ -290,23 +293,23 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: AppTheme.card,
+                          color: colors.card,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppTheme.cardBorder),
+                          border: Border.all(color: colors.cardBorder),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
+                            Row(
                               children: [
-                                Icon(CupertinoIcons.person_2_fill, color: AppTheme.accent, size: 20),
-                                SizedBox(width: 8),
+                                Icon(CupertinoIcons.person_2_fill, color: colors.accent, size: 20),
+                                const SizedBox(width: 8),
                                 Text(
                                   'Target Subscribers',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: AppTheme.textPrimary,
+                                    color: colors.textPrimary,
                                   ),
                                 ),
                               ],
@@ -319,13 +322,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
                                 return ActionChip(
                                   label: Text('${_formatNumber(preset)} subs'),
                                   backgroundColor: isSelected
-                                      ? AppTheme.accent.withOpacity(0.2)
-                                      : AppTheme.surface,
+                                      ? colors.accent.withValues(alpha: 0.2)
+                                      : colors.surface,
                                   side: BorderSide(
-                                    color: isSelected ? AppTheme.accent : AppTheme.cardBorder,
+                                    color: isSelected ? colors.accent : colors.cardBorder,
                                   ),
                                   labelStyle: TextStyle(
-                                    color: isSelected ? AppTheme.accent : AppTheme.textSecondary,
+                                    color: isSelected ? colors.accent : colors.textSecondary,
                                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                     fontSize: 12,
                                   ),
@@ -342,7 +345,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                             TextFormField(
                               controller: _subsController,
                               keyboardType: TextInputType.number,
-                              style: const TextStyle(color: AppTheme.textPrimary),
+                              style: TextStyle(color: colors.textPrimary),
                               decoration: const InputDecoration(
                                 labelText: 'Custom Subscriber Target',
                                 hintText: 'e.g. 15000',
@@ -363,23 +366,23 @@ class _GoalsScreenState extends State<GoalsScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: AppTheme.card,
+                          color: colors.card,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppTheme.cardBorder),
+                          border: Border.all(color: colors.cardBorder),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
+                            Row(
                               children: [
-                                Icon(CupertinoIcons.calendar, color: AppTheme.warning, size: 20),
-                                SizedBox(width: 8),
+                                Icon(CupertinoIcons.calendar, color: colors.warning, size: 20),
+                                const SizedBox(width: 8),
                                 Text(
                                   'Until Which Date?',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: AppTheme.textPrimary,
+                                    color: colors.textPrimary,
                                   ),
                                 ),
                               ],
@@ -410,23 +413,23 @@ class _GoalsScreenState extends State<GoalsScreen> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.surface,
+                                  color: colors.surface,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppTheme.cardBorder),
+                                  border: Border.all(color: colors.cardBorder),
                                 ),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       DateFormat('MMMM dd, yyyy').format(currentGoal.targetDate),
-                                      style: const TextStyle(
-                                        color: AppTheme.textPrimary,
+                                      style: TextStyle(
+                                        color: colors.textPrimary,
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
-                                    const Icon(CupertinoIcons.calendar_today,
-                                        color: AppTheme.primaryLight, size: 20),
+                                    Icon(CupertinoIcons.calendar_today,
+                                        color: colors.accent, size: 20),
                                   ],
                                 ),
                               ),
