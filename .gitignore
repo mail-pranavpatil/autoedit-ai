@@ -15,7 +15,6 @@ apps/web/out/
 coverage/
 htmlcov/
 .mypy_cache/
-alembic/versions/*.pyc
 *.log
 .cursor/
 .claude/

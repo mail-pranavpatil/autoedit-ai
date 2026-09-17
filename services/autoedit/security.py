@@ -5,41 +5,13 @@ import hashlib
 import hmac
 import json
 import secrets
-import time
 from cryptography.fernet import Fernet, InvalidToken
 
 from autoedit.config import get_settings
 
-COOKIE_NAME = "autoedit_session"
-SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
-
 
 def _sign(payload: str, secret: str) -> str:
     return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
-
-
-def create_session_token(user_id: str) -> str:
-    secret = get_settings().session_secret
-    body = json.dumps({"uid": user_id, "exp": int(time.time()) + SESSION_TTL_SECONDS})
-    encoded = base64.urlsafe_b64encode(body.encode()).decode()
-    return f"{encoded}.{_sign(encoded, secret)}"
-
-
-def read_session_token(token: str) -> str | None:
-    secret = get_settings().session_secret
-    try:
-        encoded, signature = token.split(".", 1)
-    except ValueError:
-        return None
-    if not hmac.compare_digest(signature, _sign(encoded, secret)):
-        return None
-    try:
-        body = json.loads(base64.urlsafe_b64decode(encoded.encode()).decode())
-    except Exception:
-        return None
-    if int(body.get("exp", 0)) < int(time.time()):
-        return None
-    return str(body.get("uid") or "") or None
 
 
 def create_oauth_state(platform: str = "web", **kwargs) -> str:

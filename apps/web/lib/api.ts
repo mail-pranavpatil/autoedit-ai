@@ -1,7 +1,8 @@
-// Default "" = same-origin: every request becomes a relative /api/... path that
-// next.config.js proxies to the FastAPI service (keeps the session cookie
-// same-site). Set NEXT_PUBLIC_API_URL only to point the browser at a different
-// API host directly (cross-origin).
+import { supabase } from "./supabase";
+
+// Default "" = same-origin: every request becomes a relative /api/... path
+// that next.config.js proxies to the FastAPI service. Set NEXT_PUBLIC_API_URL
+// only to point the browser at a different API host directly (cross-origin).
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 export type Project = {
@@ -174,10 +175,15 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    headers.set("Authorization", `Bearer ${session.access_token}`);
+  }
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers,
-    credentials: "include",
   });
   if (res.status === 401 && typeof window !== "undefined" && !path.includes("/auth/me")) {
     window.location.href = "/login";
@@ -199,6 +205,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return undefined as T;
 }
 
+// Session is also mirrored into a cookie (see components/providers.tsx) so
+// plain <img>/<video>/<audio> tags to auth-gated media routes (e.g.
+// /api/media/thumb/{id}, /api/videos/{id}/source) stay authenticated without
+// every call site needing to resolve a token first.
 export function mediaUrl(path?: string | null) {
   if (!path) return "";
   if (path.startsWith("http")) return path;

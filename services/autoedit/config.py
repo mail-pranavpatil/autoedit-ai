@@ -19,13 +19,20 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     worker_concurrency: int = 4
 
+    # Supabase: system of record for auth (login/signup) and the Postgres DB
+    # above. The backend only ever verifies the JWTs Supabase issues
+    # client-side - it never creates sessions or stores passwords itself.
+    supabase_url: str = ""
+    supabase_jwt_secret: str = ""
+
+    # Drive/YouTube data-access consent (separate from login - see
+    # services/autoedit/auth.py). Google sign-in itself is handled by
+    # Supabase's Google provider on the client.
     google_client_id: str = ""
     google_client_secret: str = ""
-    google_redirect_uri: str = "https://autoedit-web.onrender.com/api/auth/callback"
-    # Session cookie: set true once served over HTTPS behind a single origin.
-    cookie_secure: bool = True
-    # Custom URL scheme the iOS shell registers; the mobile OAuth callback
-    # redirects to "<scheme>://auth/callback?token=..." instead of setting a cookie.
+    google_redirect_uri: str = "https://autoedit-api.onrender.com/api/channels/youtube/callback"
+    # Custom URL scheme the iOS shell registers; the Drive/YouTube-connect
+    # OAuth callback redirects to "<scheme>://auth/callback?token=..." on iOS.
     ios_redirect_scheme: str = "autoedit"
 
     openai_api_key: str = ""
@@ -72,15 +79,6 @@ class Settings(BaseSettings):
     # full-res buffers per decoder, which OOM-kills memory-capped containers
     # (SIGKILL 9). Cap decoder / filtergraph / encoder threads to keep peak RAM
     # bounded. Raise this on hosts with plenty of memory to speed rendering up.
-    # Email verification (SMTP or Resend)
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_from: str = "Eren AI <noreply@autoedit.ai>"
-    smtp_use_tls: bool = True
-    resend_api_key: str = ""
-
     render_ffmpeg_threads: int = 1
 
 

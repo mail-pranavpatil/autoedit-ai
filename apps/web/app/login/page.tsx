@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
-import { API_URL } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { toast } from "@/components/common/Toast";
@@ -17,14 +17,22 @@ function LoginForm() {
     }
   }, [searchParams]);
 
+  async function signInWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (error) toast("Google sign in failed to start.", "err");
+  }
+
   return (
     <Card className="w-full max-w-md p-8">
       <h1 className="text-2xl font-semibold">AutoEdit AI</h1>
       <p className="mt-3 text-sm text-muted">
-        Sign in with Google. The same account connects Drive so you can import a folder of talking-head clips and get
+        Sign in with Google. Connect Drive separately afterward to import a folder of talking-head clips and get
         finished 9:16 reels.
       </p>
-      <Button className="mt-8 w-full" onClick={() => (window.location.href = `${API_URL}/api/auth/google`)}>
+      <Button className="mt-8 w-full" onClick={signInWithGoogle}>
         Continue with Google
       </Button>
     </Card>

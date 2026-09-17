@@ -25,22 +25,22 @@ def uuid_pk() -> uuid.UUID:
 
 
 class User(Base):
+    """Profile row keyed off Supabase's `auth.users` — id/email/password/OAuth
+    identity all live in Supabase Auth now; this table only holds
+    app-specific fields. Auto-created by the `handle_new_user` trigger
+    (supabase/migrations/20260914000000_init.sql), never inserted by app code.
+    """
+
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid_pk)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
-    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     picture_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     youtube_auto_upload: Mapped[bool] = mapped_column(Boolean, default=True)
-    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    apple_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     editing_experience: Mapped[str | None] = mapped_column(String(64), nullable=True)
     creation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    verification_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    verification_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

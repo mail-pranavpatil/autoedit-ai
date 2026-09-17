@@ -1,10 +1,25 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { api, type User } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import { AppShell } from "@/components/layout/AppShell";
 import { ToastHost } from "@/components/common/Toast";
+
+// Mirrors the Supabase session into a cookie so plain <img>/<video>/<audio>
+// tags to auth-gated media routes (thumbnails, source/output video, music)
+// stay authenticated - there's no way to attach an Authorization header to a
+// resource tag, and get_current_user reads this as a fallback.
+function syncAuthCookie(session: Session | null) {
+  if (session?.access_token) {
+    const secure = location.protocol === "https:" ? "; secure" : "";
+    document.cookie = `sb_access_token=${session.access_token}; path=/; samesite=lax${secure}`;
+  } else {
+    document.cookie = "sb_access_token=; path=/; max-age=0";
+  }
+}
 
 const AuthContext = createContext<{
   user: User | null;
@@ -32,6 +47,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
       setUser(null);
     }
   }
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => syncAuthCookie(data.session));
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => syncAuthCookie(session));
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     refresh().finally(() => setReady(true));

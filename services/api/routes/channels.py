@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -9,23 +10,101 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from autoedit.auth import get_current_user, get_valid_access_token, google_auth_url
+from autoedit.auth import (
+    exchange_code,
+    get_current_user,
+    get_valid_access_token,
+    google_auth_url,
+    upsert_drive_connection,
+    verify_supabase_jwt,
+)
 from autoedit.config import get_settings
 from autoedit.db import get_db
 from autoedit.models import ChannelStatsSnapshot, ConnectedChannel, User
-from autoedit.security import create_oauth_state
+from autoedit.security import create_oauth_state, read_oauth_state
 from autoedit.youtube import fetch_user_youtube_channels
+
+logger = logging.getLogger("autoedit")
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 
 @router.get("/youtube/connect")
-def connect_youtube_oauth(platform: str | None = None):
+def connect_youtube_oauth(token: str, platform: str | None = None, db: Session = Depends(get_db)):
+    """Start the Drive/YouTube data-access consent flow for an already
+    logged-in (Supabase) user. Hit via a bare browser redirect (ASWebAuthenticationSession
+    on iOS), so identity can't ride an Authorization header - the caller's
+    current Supabase access token is passed as `token` instead and carried
+    through the signed oauth `state` for the callback below to trust.
+    """
     settings = get_settings()
     if not settings.google_client_id:
         raise HTTPException(500, "GOOGLE_CLIENT_ID is not configured")
-    state = create_oauth_state("ios" if platform == "ios" else "web", intent="youtube_connect")
+    user_id = verify_supabase_jwt(token)
+    if not db.query(User).filter(User.id == user_id).first():
+        raise HTTPException(401, "User not found")
+    state = create_oauth_state("ios" if platform == "ios" else "web", user_id=str(user_id))
     return RedirectResponse(google_auth_url(state))
+
+
+@router.get("/youtube/callback")
+def youtube_connect_callback(
+    code: str | None = None,
+    error: str | None = None,
+    state: str | None = None,
+    db: Session = Depends(get_db),
+):
+    settings = get_settings()
+    parsed_state = read_oauth_state(state) if state else None
+    is_ios = bool(parsed_state and parsed_state.get("p") == "ios")
+
+    def _redirect(path: str) -> RedirectResponse:
+        if is_ios:
+            return RedirectResponse(f"{settings.ios_redirect_scheme}://{path}")
+        return RedirectResponse(f"{settings.frontend_url}/{path}")
+
+    user_id = parsed_state.get("user_id") if parsed_state else None
+    if error or not code or not user_id:
+        logger.warning("YouTube connect callback error=%s code_present=%s", error, bool(code))
+        return _redirect(f"channels/youtube/connected?error={error or 'oauth'}")
+
+    user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+    if not user:
+        return _redirect("channels/youtube/connected?error=oauth_failed")
+
+    try:
+        tokens = exchange_code(code)
+        upsert_drive_connection(db, user, tokens)
+
+        yt_channels = fetch_user_youtube_channels(tokens["access_token"])
+        for ch in yt_channels:
+            existing = (
+                db.query(ConnectedChannel)
+                .filter(ConnectedChannel.user_id == user.id, ConnectedChannel.channel_id == ch["channelId"])
+                .first()
+            )
+            if existing:
+                existing.channel_title = ch["channelTitle"]
+                if ch.get("thumbnailUrl"):
+                    existing.thumbnail_url = ch["thumbnailUrl"]
+                existing.updated_at = datetime.utcnow()
+            else:
+                db.add(
+                    ConnectedChannel(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        platform="youtube",
+                        channel_id=ch["channelId"],
+                        channel_title=ch["channelTitle"],
+                        thumbnail_url=ch.get("thumbnailUrl"),
+                        created_at=datetime.utcnow(),
+                    )
+                )
+        db.commit()
+        return _redirect("channels/youtube/connected")
+    except Exception as e:
+        logger.error("YouTube connect callback failed: %s", e, exc_info=True)
+        return _redirect("channels/youtube/connected?error=oauth_failed")
 
 
 @router.get("/youtube/my-channels")

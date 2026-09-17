@@ -1,20 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: autoedit
-      POSTGRES_PASSWORD: autoedit
-      POSTGRES_DB: autoedit
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U autoedit"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   redis:
     image: redis:7-alpine
     ports:
@@ -31,7 +15,6 @@ services:
       dockerfile: docker/Dockerfile.api
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://autoedit:autoedit@postgres:5432/autoedit
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /data/storage
       ASSETS_DIR: /data/assets
@@ -43,14 +26,10 @@ services:
       - ./assets:/data/assets
       - ./services:/app/services
       - ./packages:/app/packages
-      - ./alembic:/app/alembic
-      - ./alembic.ini:/app/alembic.ini
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
 
   worker:
     build:
@@ -58,7 +37,6 @@ services:
       dockerfile: docker/Dockerfile.worker
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://autoedit:autoedit@postgres:5432/autoedit
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /data/storage
       ASSETS_DIR: /data/assets
@@ -68,8 +46,6 @@ services:
       - ./services:/app/services
       - ./packages:/app/packages
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A worker.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2} -Q celery
@@ -80,7 +56,6 @@ services:
       dockerfile: docker/Dockerfile.worker
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://autoedit:autoedit@postgres:5432/autoedit
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /data/storage
       ASSETS_DIR: /data/assets
@@ -90,8 +65,6 @@ services:
       - ./services:/app/services
       - ./packages:/app/packages
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A worker.celery_app worker --loglevel=info --concurrency=1 -Q youtube
@@ -104,6 +77,8 @@ services:
       API_URL: http://api:8000
       NEXT_PUBLIC_API_URL: http://localhost:8000
       NEXT_PUBLIC_APP_NAME: AutoEdit AI
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
     ports:
       - "3000:3000"
     volumes:
@@ -112,6 +87,3 @@ services:
       - /app/.next
     depends_on:
       - api
-
-volumes:
-  postgres_data:
