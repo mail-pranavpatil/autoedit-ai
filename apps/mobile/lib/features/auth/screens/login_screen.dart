@@ -6,6 +6,7 @@ import '../../dashboard/screens/dashboard_screen.dart';
 import '../services/auth_service.dart';
 import 'signup_screen.dart';
 import 'email_verification_screen.dart';
+import '../../../core/widgets/glass_container.dart';
 import '../../../core/widgets/google_logo.dart';
 
 
@@ -298,55 +299,54 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 22),
 
-                  // Google Logo Login Button
-                  OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _loginWithGoogle,
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: colors.card,
-                      foregroundColor: colors.textPrimary,
-                      side: BorderSide(color: colors.cardBorder),
-                      minimumSize: const Size.fromHeight(50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  // Google / Apple sign-in - icon-only boxes, side by side
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Semantics(
+                          button: true,
+                          label: 'Continue with Google',
+                          child: GlassContainer(
+                            borderRadius: 12,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            onTap: _isLoading ? null : _loginWithGoogle,
+                            child: Center(
+                              child: Opacity(
+                                opacity: _isLoading ? 0.5 : 1,
+                                child: Container(
+                                  width: 26,
+                                  height: 26,
+                                  alignment: Alignment.center,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white,
+                                  ),
+                                  child: const GoogleLogo(size: 16),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    icon: Container(
-                      width: 26,
-                      height: 26,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Semantics(
+                          button: true,
+                          label: 'Sign in with Apple',
+                          child: GlassContainer(
+                            borderRadius: 12,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            onTap: _isLoading ? null : _loginWithApple,
+                            child: Center(
+                              child: Opacity(
+                                opacity: _isLoading ? 0.5 : 1,
+                                child: Icon(Icons.apple, size: 24, color: colors.textPrimary),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      child: const GoogleLogo(size: 16),
-                    ),
-                    label: const Text(
-                      'Continue with Google',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Apple Logo Login Button (Sign in with Apple)
-                  ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _loginWithApple,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      minimumSize: const Size.fromHeight(50),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon: const Icon(Icons.apple, color: Colors.black, size: 24),
-                    label: const Text(
-                      'Sign in with Apple',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black,
-                      ),
-                    ),
+                    ],
                   ),
                   const SizedBox(height: 32),
 

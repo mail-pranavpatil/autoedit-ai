@@ -137,6 +137,12 @@ class AuthService {
       await _client.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: '$authScheme://login-callback',
+        // Default platformDefault opens an in-app SFSafariViewController on
+        // iOS, which isn't reliable at handing the autoedit:// redirect back
+        // to the app. External Safari is the documented fix - same pattern
+        // the "Connect YouTube" flow already gets for free via
+        // flutter_web_auth_2's ASWebAuthenticationSession.
+        authScreenLaunchMode: LaunchMode.externalApplication,
       );
       await completer.future.timeout(const Duration(minutes: 2));
       return await _syncProfile();
