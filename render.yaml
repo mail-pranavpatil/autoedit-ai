@@ -64,10 +64,8 @@ services:
       # --- set these in the dashboard after the first deploy ---
       - key: DATABASE_URL           # Supabase Postgres connection string (pooler)
         sync: false
-      - key: SUPABASE_URL           # https://<project-ref>.supabase.co
-        sync: false
-      - key: SUPABASE_JWT_SECRET
-        sync: false
+      - key: SUPABASE_URL           # https://<project-ref>.supabase.co - also used to
+        sync: false                # build the JWKS URL that verifies auth tokens, see auth.py
       - key: FRONTEND_URL          # https://<your autoedit-web URL>
         sync: false
       - key: GOOGLE_REDIRECT_URI   # https://<your autoedit-api URL>/api/channels/youtube/callback

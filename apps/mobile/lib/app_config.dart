@@ -21,8 +21,9 @@ const String sessionCookieName = 'sb_access_token';
 
 /// Supabase: system of record for login/signup. The anon key is a public,
 /// client-safe key by design (Supabase's own recommendation is to embed it
-/// directly in client apps) - only SUPABASE_JWT_SECRET on the backend is
-/// actually secret.
+/// directly in client apps) - the backend verifies tokens against
+/// Supabase's public JWKS endpoint, so there's no shared secret on either
+/// side anymore.
 const String supabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
   defaultValue: 'https://gxwungthmfdbtjnbbupm.supabase.co',

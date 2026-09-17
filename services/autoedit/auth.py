@@ -1,11 +1,13 @@
 import logging
 import uuid
 from datetime import datetime, timedelta
+from functools import lru_cache
 from urllib.parse import urlencode
 
 import httpx
 import jwt
 from fastapi import Depends, HTTPException, Request
+from jwt import PyJWKClient
 from sqlalchemy.orm import Session
 
 from autoedit.config import get_settings
@@ -126,15 +128,24 @@ def get_valid_access_token(db: Session, user: User) -> str:
     return refresh_access_token(db, conn)
 
 
+@lru_cache
+def _jwks_client() -> PyJWKClient:
+    settings = get_settings()
+    jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
+    return PyJWKClient(jwks_url, cache_keys=True)
+
+
 def verify_supabase_jwt(token: str) -> uuid.UUID:
     """Decode+verify a Supabase-issued access token, returning the user id
-    (the `sub` claim). Raises HTTPException(401) on any failure."""
-    settings = get_settings()
+    (the `sub` claim). Supabase signs tokens with the project's JWT signing
+    key (ES256/RS256, fetched from its JWKS endpoint by `kid`) rather than a
+    static shared secret. Raises HTTPException(401) on any failure."""
     try:
+        signing_key = _jwks_client().get_signing_key_from_jwt(token)
         payload = jwt.decode(
             token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
+            signing_key.key,
+            algorithms=["ES256", "RS256"],
             audience="authenticated",
         )
     except jwt.PyJWTError as e:

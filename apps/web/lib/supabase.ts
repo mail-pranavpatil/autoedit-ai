@@ -2,7 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 
 // Login/signup system of record. The anon key is a public, client-safe key
 // by design (Supabase's own recommendation is to embed it in client apps) -
-// only the backend's SUPABASE_JWT_SECRET is actually secret.
+// the backend verifies tokens against Supabase's public JWKS endpoint, so
+// there's no shared secret on either side anymore.
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://gxwungthmfdbtjnbbupm.supabase.co";
 const SUPABASE_ANON_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||

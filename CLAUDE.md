@@ -53,9 +53,11 @@ Login/signup and the Postgres database both live in Supabase now (migrated
   directly. No password hash, OAuth `sub`, or email-verification columns
   live here anymore; Supabase owns all of that.
 - **Backend** (`services/autoedit/auth.py`'s `get_current_user`) only ever
-  *verifies* the JWT Supabase issues client-side (`SUPABASE_JWT_SECRET`) — it
-  never creates sessions or stores passwords. `services/api/routes/auth.py`
-  is trimmed to just `GET /api/auth/me`.
+  *verifies* the JWT Supabase issues client-side, against Supabase's own JWKS
+  endpoint (`SUPABASE_URL/auth/v1/.well-known/jwks.json` — the project signs
+  tokens with ES256/RS256 signing keys, not a shared secret) — it never
+  creates sessions or stores passwords. `services/api/routes/auth.py` is
+  trimmed to just `GET /api/auth/me`.
 - **Google sign-in is split in two**: Supabase's Google provider handles
   login identity only (mobile: `AuthService.signInWithGoogle()` via
   `supabase.auth.signInWithOAuth`). Drive/YouTube data access is a *separate*
@@ -194,7 +196,7 @@ Shipped on top of the base MVP (see git log):
 cp .env.example .env          # fill GOOGLE_*, OPENAI_API_KEY, PEXELS_API_KEY,
                               # APIFY_API_TOKEN, optionally JINA_API_KEY,
                               # TOKEN_ENCRYPTION_KEY (Fernet), DATABASE_URL/
-                              # SUPABASE_URL/SUPABASE_JWT_SECRET (Supabase project)
+                              # SUPABASE_URL (Supabase project)
 npx supabase link --project-ref <ref>   # once per machine
 npx supabase db push                    # applies supabase/migrations/*.sql
 docker compose up --build     # web :3000, api :8000/health (no local postgres

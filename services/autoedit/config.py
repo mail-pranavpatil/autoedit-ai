@@ -21,9 +21,9 @@ class Settings(BaseSettings):
 
     # Supabase: system of record for auth (login/signup) and the Postgres DB
     # above. The backend only ever verifies the JWTs Supabase issues
-    # client-side - it never creates sessions or stores passwords itself.
+    # client-side (against Supabase's own JWKS endpoint, see auth.py) - it
+    # never creates sessions or stores passwords itself.
     supabase_url: str = ""
-    supabase_jwt_secret: str = ""
 
     # Drive/YouTube data-access consent (separate from login - see
     # services/autoedit/auth.py). Google sign-in itself is handled by
